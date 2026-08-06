@@ -55,6 +55,151 @@
   const logoImg = new Image();
   logoImg.src = 'revtrac-logo.svg';
 
+  // ---- Car body illustrations ----
+  // Every body is drawn centered on the origin pointing +x, within roughly
+  // 48x26 world units, on any 2d context (race canvas or lobby cards).
+  const TIRE = '#16181d';
+  const DARKGLASS = 'rgba(15,18,28,0.85)';
+  const SHADE = 'rgba(0,0,0,0.3)';
+  const ACCENT = 'rgba(255,255,255,0.55)';
+
+  function rr(c, x, y, w, h, r) {
+    c.beginPath();
+    c.moveTo(x + r, y);
+    c.arcTo(x + w, y, x + w, y + h, r);
+    c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r);
+    c.arcTo(x, y, x + w, y, r);
+    c.closePath();
+  }
+
+  function poly(c, pts) {
+    c.beginPath();
+    pts.forEach(([x, y], i) => (i === 0 ? c.moveTo(x, y) : c.lineTo(x, y)));
+    c.closePath();
+  }
+
+  function drawCarBody(c, car) {
+    const col = car.color;
+    c.save();
+    c.lineJoin = 'round';
+    c.strokeStyle = 'rgba(0,0,0,0.45)';
+    c.lineWidth = 2;
+
+    switch (car.body) {
+      case 'formula': {
+        // wheels
+        c.fillStyle = TIRE;
+        c.fillRect(7, -13.5, 8, 5); c.fillRect(7, 8.5, 8, 5);
+        c.fillRect(-17, -14, 9, 5.5); c.fillRect(-17, 8.5, 9, 5.5);
+        // rear wing
+        c.fillStyle = col;
+        rr(c, -23, -12, 4.5, 24, 1.5); c.fill(); c.stroke();
+        // front wing
+        rr(c, 19.5, -11, 4, 22, 1.5); c.fill(); c.stroke();
+        // narrow body + nose
+        rr(c, -17, -5.5, 34, 11, 5); c.fill(); c.stroke();
+        poly(c, [[15, -4.5], [23, 0], [15, 4.5]]); c.fill(); c.stroke();
+        // cockpit
+        c.fillStyle = DARKGLASS;
+        c.beginPath(); c.arc(-3, 0, 4, 0, Math.PI * 2); c.fill();
+        c.fillStyle = ACCENT;
+        c.fillRect(9, -1.5, 7, 3);
+        break;
+      }
+      case 'muscle': {
+        c.fillStyle = '#22262e';
+        rr(c, -23, -12, 4, 24, 1.5); c.fill(); c.stroke(); // spoiler
+        c.fillStyle = col;
+        rr(c, -21, -11, 42, 22, 6); c.fill(); c.stroke();
+        c.fillStyle = DARKGLASS;
+        rr(c, -7, -8, 16, 16, 4); c.fill();
+        c.fillStyle = SHADE;
+        rr(c, 9, -3.5, 8, 7, 2); c.fill(); // hood scoop
+        c.fillStyle = ACCENT;
+        c.fillRect(10, -6.5, 10, 3); c.fillRect(10, 3.5, 10, 3); // twin stripes
+        break;
+      }
+      case 'van': {
+        c.fillStyle = col;
+        rr(c, -22, -12, 44, 24, 5); c.fill(); c.stroke();
+        c.fillStyle = SHADE;
+        rr(c, -17, -8.5, 23, 17, 3); c.fill(); // roof panel
+        c.fillStyle = DARKGLASS;
+        rr(c, 10, -9.5, 6.5, 19, 2); c.fill(); // windshield
+        c.fillStyle = ACCENT;
+        c.fillRect(19.5, -7, 2.5, 14); // bumper
+        break;
+      }
+      case 'kart': {
+        c.fillStyle = TIRE;
+        c.fillRect(6, -11.5, 7, 4.5); c.fillRect(6, 7, 7, 4.5);
+        c.fillRect(-13, -11.5, 7, 4.5); c.fillRect(-13, 7, 7, 4.5);
+        c.fillStyle = col;
+        rr(c, -13, -7, 27, 14, 4); c.fill(); c.stroke();
+        c.fillStyle = SHADE;
+        c.fillRect(10, -6, 3, 12); // nose bar
+        c.fillStyle = DARKGLASS;
+        c.beginPath(); c.arc(-2, 0, 4.5, 0, Math.PI * 2); c.fill();
+        c.fillStyle = '#dfe3ea';
+        c.beginPath(); c.arc(-2, 0, 2.6, 0, Math.PI * 2); c.fill(); // helmet
+        break;
+      }
+      case 'ute': {
+        c.fillStyle = col;
+        rr(c, -21, -10.5, 21, 21, 3); c.fill(); c.stroke(); // bed
+        c.fillStyle = SHADE;
+        rr(c, -19, -8.5, 17, 17, 2); c.fill(); // bed interior
+        c.fillStyle = ACCENT;
+        c.globalAlpha = 0.35;
+        c.fillRect(-16, -8.5, 2, 17); c.fillRect(-9, -8.5, 2, 17); // slats
+        c.globalAlpha = 1;
+        c.fillStyle = col;
+        rr(c, 0, -11, 22, 22, 4); c.fill(); c.stroke(); // cab
+        c.fillStyle = DARKGLASS;
+        rr(c, 2.5, -8, 5.5, 16, 2); c.fill(); // windshield
+        break;
+      }
+      case 'roadster': {
+        c.fillStyle = '#22262e';
+        rr(c, -23, -7, 3.5, 14, 1.5); c.fill(); c.stroke(); // tail spoiler
+        c.fillStyle = col;
+        c.beginPath(); c.ellipse(0, 0, 21, 10.5, 0, 0, Math.PI * 2); c.fill(); c.stroke();
+        c.fillStyle = DARKGLASS;
+        c.beginPath(); c.ellipse(-4, 0, 6.5, 5.5, 0, 0, Math.PI * 2); c.fill();
+        c.fillStyle = ACCENT;
+        rr(c, 3.5, -7, 3, 14, 1.5); c.fill(); // windshield
+        break;
+      }
+      case 'beetle': {
+        c.fillStyle = col;
+        c.beginPath(); c.ellipse(0, 0, 18.5, 12, 0, 0, Math.PI * 2); c.fill(); c.stroke();
+        c.fillStyle = SHADE;
+        c.beginPath(); c.ellipse(-1.5, 0, 10.5, 8.5, 0, 0, Math.PI * 2); c.fill();
+        c.fillStyle = DARKGLASS;
+        rr(c, 7, -6.5, 3, 13, 1.5); c.fill(); // windshield
+        c.fillStyle = ACCENT;
+        c.beginPath(); c.arc(16, -5.5, 1.8, 0, Math.PI * 2); c.fill();
+        c.beginPath(); c.arc(16, 5.5, 1.8, 0, Math.PI * 2); c.fill(); // headlights
+        break;
+      }
+      case 'wedge':
+      default: {
+        c.fillStyle = '#22262e';
+        rr(c, -24, -12, 3.5, 24, 1.5); c.fill(); c.stroke(); // spoiler
+        c.fillStyle = col;
+        poly(c, [[24, 0], [12, -10], [-16, -11], [-21, -6], [-21, 6], [-16, 11], [12, 10]]);
+        c.fill(); c.stroke();
+        c.fillStyle = DARKGLASS;
+        rr(c, -6, -5.5, 12, 11, 3); c.fill();
+        c.fillStyle = ACCENT;
+        c.fillRect(10, -1.5, 9, 3);
+        break;
+      }
+    }
+    c.restore();
+  }
+
   socket.on('connect', () => { myId = socket.id; });
 
   // ---- Home ----
@@ -168,10 +313,17 @@
       div.className = 'car-card';
       if (owner && owner.id === myId) div.classList.add('selected');
       else if (owner) div.classList.add('taken');
-      div.innerHTML =
-        `<div class="swatch" style="background:${car.color}"></div>` +
+      const cv = document.createElement('canvas');
+      cv.width = 84; cv.height = 52;
+      cv.className = 'car-illus';
+      const cc = cv.getContext('2d');
+      cc.translate(42, 26);
+      cc.scale(1.6, 1.6);
+      drawCarBody(cc, car);
+      div.appendChild(cv);
+      div.insertAdjacentHTML('beforeend',
         `<div class="cname">${car.name}</div>` +
-        `<div class="owner">${owner ? esc(owner.name) : ''}</div>`;
+        `<div class="owner">${owner ? esc(owner.name) : ''}</div>`);
       if (!owner || owner.id === myId) {
         div.onclick = () => socket.emit('selectCar', { carId: car.id });
       }
@@ -490,19 +642,7 @@
     }
 
     // body
-    ctx.fillStyle = car.color;
-    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
-    ctx.lineWidth = 2;
-    roundRect(-20, -12, 40, 24, 7);
-    ctx.fill();
-    ctx.stroke();
-    // cockpit
-    ctx.fillStyle = 'rgba(15,18,28,0.85)';
-    roundRect(-4, -8, 15, 16, 4);
-    ctx.fill();
-    // nose stripe
-    ctx.fillStyle = 'rgba(255,255,255,0.55)';
-    ctx.fillRect(13, -10, 4, 20);
+    drawCarBody(ctx, car);
 
     ctx.rotate(-s.angle);
 
@@ -600,6 +740,8 @@
   }
   requestAnimationFrame(frame);
 
-  // Dev/test hook: render a single frame on demand (headless tabs never fire rAF).
+  // Dev/test hooks: render a single frame / a car body on demand
+  // (headless tabs never fire rAF).
   window.__rtrDrawFrame = () => frame(performance.now());
+  window.__rtrDrawCarBody = drawCarBody;
 })();
