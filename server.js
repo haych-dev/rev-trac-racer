@@ -124,6 +124,7 @@ function addPlayer(room, socket, name) {
     _u: 0,          // latest progress fraction along the lap
     rank: 1,
     finished: false,
+    retired: false,
     finishTime: 0,
     boostUntil: 0,
     spinUntil: 0,
@@ -207,6 +208,7 @@ function startRace(room) {
     p._u = 0;
     p.rank = i + 1;
     p.finished = false;
+    p.retired = false;
     p.finishTime = 0;
     p.boostUntil = 0;
     p.spinUntil = 0;
@@ -234,8 +236,8 @@ function checkRaceEnd(room) {
       .map((p) => ({
         name: p.name,
         carId: p.carId,
-        finished: p.finished,
-        time: p.finished ? p.finishTime - room.raceStart : null,
+        finished: p.finished && !p.retired,
+        time: p.finished && !p.retired ? p.finishTime - room.raceStart : null,
         laps: p.lap,
       }))
       .sort((a, b) => {
@@ -356,6 +358,7 @@ function tick(room) {
   const players = [...room.players.values()];
 
   for (const p of players) {
+    if (p.retired) continue; // exited the race — car is off the track
     const spinning = p.spinUntil > now;
     const locked = p.lockedUntil > now;
     const canDrive = racing && !p.finished && !spinning && !locked;
@@ -446,10 +449,11 @@ function tick(room) {
   room.hazards = room.hazards.filter((hz) => hz.expiresAt > now);
 
   // --- car vs car collisions ---
-  for (let i = 0; i < players.length; i++) {
-    for (let j = i + 1; j < players.length; j++) {
-      const a = players[i];
-      const b = players[j];
+  const active = players.filter((p) => !p.retired);
+  for (let i = 0; i < active.length; i++) {
+    for (let j = i + 1; j < active.length; j++) {
+      const a = active[i];
+      const b = active[j];
       const dx = b.x - a.x;
       const dy = b.y - a.y;
       const d = Math.hypot(dx, dy);
@@ -471,6 +475,7 @@ function tick(room) {
   const order = players
     .slice()
     .sort((a, b) => {
+      if (a.retired !== b.retired) return a.retired ? 1 : -1;
       if (a.finished && b.finished) return a.finishTime - b.finishTime;
       if (a.finished) return -1;
       if (b.finished) return 1;
@@ -499,6 +504,7 @@ function tick(room) {
         lap: p.lap,
         rank: p.rank,
         finished: p.finished,
+        retired: p.retired,
         boost: p.boostUntil > now,
         spin: p.spinUntil > now,
         locked: p.lockedUntil > now,
@@ -594,6 +600,20 @@ io.on('connection', (socket) => {
       up: !!input.up, down: !!input.down,
       left: !!input.left, right: !!input.right,
     };
+  });
+
+  socket.on('exitRace', () => {
+    const room = rooms.get(socket.data.roomCode);
+    if (!room) return;
+    const p = room.players.get(socket.id);
+    if (!p) return;
+    if (room.status !== 'racing' || p.finished) return;
+    console.log(`[exitRace] ${socket.id}`);
+    p.finished = true;
+    p.retired = true;
+    p.finishTime = Date.now();
+    p.speed = 0;
+    p.item = null;
   });
 
   socket.on('useItem', () => {

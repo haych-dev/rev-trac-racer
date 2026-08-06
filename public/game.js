@@ -9,11 +9,11 @@
   const CARS = RTCars.CARS;
 
   const ITEM_INFO = {
-    boost:  { label: '❯❯❯ Boost',   color: '#e63946' },
-    cab:    { label: '\u{1F4CB} CAB',              color: '#f4a832' },
-    lock:   { label: '\u{1F512} Lock',             color: '#7ab5ff' },
-    shield: { label: '⚡ Emergency',           color: '#ffd60a' },
-    oops:   { label: '\u{1F4A5} OOPS!',            color: '#ff5da2' },
+    boost:  { label: '❯❯❯ Boost',   color: '#d63a44' },
+    cab:    { label: '\u{1F4CB} CAB',              color: '#c07c00' },
+    lock:   { label: '\u{1F512} Lock',             color: '#2d6fd6' },
+    shield: { label: '⚡ Emergency',           color: '#d4a400' },
+    oops:   { label: '\u{1F4A5} OOPS!',            color: '#d6336c' },
   };
 
   const EVENT_TOASTS = {
@@ -49,6 +49,7 @@
   let smooth = new Map(); // id -> {x, y, angle}
   let lastResults = null;
   let raceActive = false;
+  let exitedRace = false; // player bailed out of the current race
   let currentMapId = 0;
 
   // The real Rev-Trac logo, drawn on each track's infield.
@@ -234,7 +235,8 @@
   socket.on('lobby', (data) => {
     lobby = data;
     if (typeof data.mapId === 'number') currentMapId = data.mapId;
-    if (data.status === 'countdown' || data.status === 'racing') {
+    if (data.status === 'countdown') exitedRace = false; // new race starting
+    if ((data.status === 'countdown' || data.status === 'racing') && !exitedRace) {
       if (!raceActive) { raceActive = true; showScreen('game'); }
       return;
     }
@@ -244,7 +246,7 @@
   function drawMapPreview(cv, map, selected) {
     const c = cv.getContext('2d');
     const scale = Math.min(cv.width / WORLD_W, cv.height / WORLD_H);
-    c.fillStyle = '#101722';
+    c.fillStyle = selected ? '#e6edf9' : '#e9edf4';
     c.fillRect(0, 0, cv.width, cv.height);
     c.save();
     c.translate((cv.width - WORLD_W * scale) / 2, (cv.height - WORLD_H * scale) / 2);
@@ -255,15 +257,15 @@
     c.lineJoin = 'round';
     c.lineCap = 'round';
     c.lineWidth = map.halfWidth * 2;
-    c.strokeStyle = selected ? '#4a5570' : '#39415a';
+    c.strokeStyle = selected ? '#1e396b' : '#94a3bd';
     c.stroke(path);
     c.lineWidth = 6;
     c.setLineDash([26, 30]);
-    c.strokeStyle = selected ? BRAND_RED : 'rgba(255,255,255,0.3)';
+    c.strokeStyle = selected ? BRAND_RED : 'rgba(255,255,255,0.65)';
     c.stroke(path);
     c.setLineDash([]);
     const st = RTMaps.pointAt(map.path, 0);
-    c.fillStyle = '#fff';
+    c.fillStyle = selected ? '#fff' : '#5b6577';
     c.beginPath();
     c.arc(st.x, st.y, 22, 0, Math.PI * 2);
     c.fill();
@@ -381,18 +383,34 @@
   socket.on('state', (state) => {
     latestState = state;
     if (typeof state.mapId === 'number') currentMapId = state.mapId;
-    if ((state.status === 'countdown' || state.status === 'racing') && !raceActive) {
+    if (state.status === 'countdown') exitedRace = false; // new race starting
+    if ((state.status === 'countdown' || state.status === 'racing') && !raceActive && !exitedRace) {
       raceActive = true;
       smooth.clear();
       showScreen('game');
     }
-    // event toasts for me
     const me = state.players.find((p) => p.id === myId);
+    $('btn-exit-race').style.display =
+      state.status === 'racing' && me && !me.finished ? '' : 'none';
+    // event toasts for me
     if (me && me.event && EVENT_TOASTS[me.event]) showToast(EVENT_TOASTS[me.event]);
   });
 
+  function exitRace() {
+    if (!raceActive) return;
+    socket.emit('exitRace');
+    Object.keys(input).forEach((k) => { input[k] = false; });
+    socket.emit('input', input);
+    exitedRace = true;
+    raceActive = false;
+    showScreen('lobby');
+    renderLobby();
+  }
+  $('btn-exit-race').onclick = exitRace;
+
   socket.on('raceOver', ({ results }) => {
     raceActive = false;
+    exitedRace = false;
     lastResults = results;
     renderResults();
     setTimeout(() => showScreen('results'), 1200);
@@ -439,6 +457,7 @@
   };
   window.addEventListener('keydown', (e) => {
     if (!raceActive) return;
+    if (e.code === 'Escape') { e.preventDefault(); exitRace(); return; }
     if (e.code === 'Space') { e.preventDefault(); socket.emit('useItem'); return; }
     const k = KEYMAP[e.code];
     if (k && !input[k]) { input[k] = true; socket.emit('input', input); e.preventDefault(); }
@@ -609,6 +628,7 @@
   }
 
   function drawCar(p, t) {
+    if (p.retired) return; // exited the race
     const s = smooth.get(p.id) || { x: p.x, y: p.y, angle: p.angle };
     const car = CARS[p.carId] || CARS[0];
 
@@ -694,7 +714,7 @@
     $('hud-pos').textContent = ordinal(me.rank) + ` of ${st.players.length}`;
     const item = me.item ? ITEM_INFO[me.item] : null;
     $('hud-item').textContent = item ? item.label + '  [Space]' : 'No item';
-    $('hud-item').style.color = item ? item.color : '#9aa3b8';
+    $('hud-item').style.color = item ? item.color : '#5b6577';
 
     if (st.status === 'racing') {
       $('hud-time').textContent = formatTime(Math.max(0, st.now - st.raceStart));
