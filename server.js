@@ -32,16 +32,7 @@ const RTMaps = require('./public/maps.js');
 const SECTORS = 8; // sequential checkpoints per lap, by arc-length
 const PAD_FRACS = [0.12, 0.28, 0.45, 0.62, 0.78, 0.92]; // item rows along the lap
 
-const CARS = [
-  { id: 0, name: 'Prod Express',      color: '#e63946' },
-  { id: 1, name: 'Dev Demon',         color: '#9d4edd' },
-  { id: 2, name: 'QA Quattro',        color: '#2a9d8f' },
-  { id: 3, name: 'Sandbox Speedster', color: '#f4832b' },
-  { id: 4, name: 'Transport Titan',   color: '#3a86ff' },
-  { id: 5, name: 'Hotfix Hurricane',  color: '#ffd60a' },
-  { id: 6, name: 'Release Rocket',    color: '#57cc3f' },
-  { id: 7, name: 'Go-Live GT',        color: '#ff5da2' },
-];
+const { CARS } = require('./public/cars.js');
 
 const ITEMS = ['boost', 'cab', 'lock', 'shield', 'oops'];
 

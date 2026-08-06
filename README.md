@@ -48,6 +48,9 @@ The host picks the track in the lobby:
 | **Prod Speedway** | A flat-out tri-oval — three corners, zero excuses |
 | **Sandbox Scramble** | A wobbly loop with three sweeping esses |
 | **Hotfix Hairpin** | Sweepers into a deep hairpin — brake or backout |
+| **Integration Esses** | A snaking weave of esses across the whole top half |
+| **Double Downtime** | Two deep hairpin fingers — one down, one up |
+| **Audit Trail** | A staircase of switchbacks — every corner gets reviewed |
 
 Tracks are defined as centerline control-point loops in [public/maps.js](public/maps.js)
 (shared by server and client, smoothed with Chaikin subdivision) — add a new entry there
@@ -56,7 +59,7 @@ new track stays in bounds and never overlaps itself.
 
 ## Rooms
 
-- Up to **8 players** per room, each with a unique car
+- Up to **8 players** per room, each with a unique car from a garage of 16
 - The host picks the track; non-host players ready up; the host starts the race
 - After a race, results are shown and everyone returns to the lobby for a rematch
 
@@ -78,7 +81,7 @@ PORT=4100 LAPS=1 node server.js
 node test/bots.js http://localhost:4100 8 0
 ```
 
-(the last argument is the map id, 0–4)
+(the last argument is the map id, 0–7)
 
 ```bash
 node test/capacity.js http://localhost:4100

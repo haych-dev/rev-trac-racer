@@ -162,6 +162,57 @@
         [420, 860],
       ], 3),
     },
+    {
+      id: 5, name: 'Integration Esses', halfWidth: 72,
+      desc: 'A snaking weave of esses across the whole top half.',
+      logo: { x: 800, y: 610, w: 420 },
+      pts: chaikin([
+        [700, 865], [1150, 865],                     // start / finish straight
+        [1400, 790], [1465, 580], [1425, 350],       // right sweep
+        [1290, 190], [1150, 195],                    // into the weave
+        [1050, 315], [950, 340],                     // ess 1 (down)
+        [850, 220], [750, 195],                      // ess 2 (up)
+        [650, 315], [550, 340],                      // ess 3 (down)
+        [450, 220], [360, 195],                      // ess 4 (up)
+        [195, 300], [150, 520], [215, 740],          // left sweep
+        [400, 860],
+      ], 3),
+    },
+    {
+      id: 6, name: 'Double Downtime', halfWidth: 70,
+      desc: 'Two deep hairpin fingers — one down, one up. Unplanned.',
+      logo: { x: 1200, y: 620, w: 270 },
+      pts: chaikin([
+        [900, 860], [1180, 860],                     // start / finish straight
+        [1420, 780], [1468, 560], [1430, 330],       // right sweep
+        [1270, 170], [1085, 195],                    // top-right corner
+        [1030, 320], [1005, 440],                    // finger 1: dive down
+        [925, 525], [815, 525],                      // finger 1: U-turn
+        [745, 435], [725, 305],                      // finger 1: climb out
+        [655, 180], [400, 165],                      // top run
+        [205, 290], [152, 520], [225, 735],          // left sweep
+        [345, 845],                                  // bottom-left exit
+        [420, 745], [445, 625],                      // finger 2: climb up
+        [520, 545], [625, 560],                      // finger 2: U-turn
+        [685, 655], [695, 765],                      // finger 2: dive back
+        [780, 855],                                  // rejoin the straight
+      ], 3),
+    },
+    {
+      id: 7, name: 'Audit Trail', halfWidth: 74,
+      desc: 'A staircase of switchbacks. Every corner gets reviewed.',
+      logo: { x: 640, y: 530, w: 400 },
+      pts: chaikin([
+        [600, 862], [1150, 862],                     // start / finish straight
+        [1385, 830], [1452, 705],                    // turn 1
+        [1448, 540], [1335, 475],                    // step 1: jink left
+        [1205, 465], [1148, 370],                    // step 2: climb
+        [1135, 262], [1020, 205],                    // step 3: jink left again
+        [880, 195], [400, 170],                      // top run
+        [205, 295], [152, 520], [222, 742],          // left sweep
+        [400, 858],
+      ], 3),
+    },
   ];
 
   const MAPS = defs.map((d) => {

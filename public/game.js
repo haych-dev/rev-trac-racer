@@ -6,16 +6,7 @@
   const MAPS = RTMaps.MAPS;
   const BRAND_RED = '#ef4d57';
 
-  const CARS = [
-    { id: 0, name: 'Prod Express',      color: '#e63946' },
-    { id: 1, name: 'Dev Demon',         color: '#9d4edd' },
-    { id: 2, name: 'QA Quattro',        color: '#2a9d8f' },
-    { id: 3, name: 'Sandbox Speedster', color: '#f4832b' },
-    { id: 4, name: 'Transport Titan',   color: '#3a86ff' },
-    { id: 5, name: 'Hotfix Hurricane',  color: '#ffd60a' },
-    { id: 6, name: 'Release Rocket',    color: '#57cc3f' },
-    { id: 7, name: 'Go-Live GT',        color: '#ff5da2' },
-  ];
+  const CARS = RTCars.CARS;
 
   const ITEM_INFO = {
     boost:  { label: '❯❯❯ Boost',   color: '#e63946' },
