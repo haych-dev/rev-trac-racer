@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const path = require('path');
 const { Server } = require('socket.io');
+const { BOOST_SPEED } = require('./constants.js');
 
 const app = express();
 app.use(express.static(path.join(__dirname, 'public')));
@@ -56,7 +57,6 @@ const ACCEL = 420;
 const BRAKE = 520;
 const REVERSE_MAX = -120;
 const MAX_SPEED = 420;
-const BOOST_SPEED = 660;
 const OFFTRACK_MAX = 140;
 const FRICTION = 1.6;       // per-second speed decay factor
 const TURN_RATE = 3.0;      // rad/s at full speed factor
