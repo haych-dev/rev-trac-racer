@@ -553,6 +553,21 @@ lim2.allow('old', t0);
 lim2.allow('new', t0 + 50_000);
 lim2.sweep(10_000, t0 + 60_000);
 check('sweep drops idle keys only', lim2.size() === 1);
+
+// A rewound clock must not credit refill for time that never passed. Both
+// limiters see the same real elapsed span (t0 -> t0+500) and must agree; the
+// skewed one only differs by a denied call at an earlier timestamp.
+const mkEmpty = () => {
+  const L = createLimiter({ capacity: 1, refillPerSec: 1 });
+  L.allow('k', t0); // drains the bucket, so later denied calls consume nothing
+  return L;
+};
+const clean = mkEmpty();
+const skewed = mkEmpty();
+skewed.allow('k', t0 - 500); // backward jump, denied because the bucket is empty
+check('a rewound clock does not grant a token early',
+  skewed.allow('k', t0 + 500) === clean.allow('k', t0 + 500));
+check('500ms of a 1/s bucket is still not enough', clean.allow('k', t0 + 500) === false);
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -583,7 +598,10 @@ function createLimiter({ capacity, refillPerSec }) {
     }
     const elapsed = Math.max(0, now - b.last) / 1000;
     b.tokens = Math.min(capacity, b.tokens + elapsed * refillPerSec);
-    b.last = now;
+    // Never let a rewound clock regress the stored timestamp. Date.now() moves
+    // backward under NTP correction, and a plain `b.last = now` would then
+    // credit the next forward call with refill for time that never passed.
+    b.last = Math.max(now, b.last);
     if (b.tokens < 1) return false;
     b.tokens -= 1;
     return true;
