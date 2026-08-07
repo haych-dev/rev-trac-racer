@@ -7,6 +7,7 @@
  */
 const { io } = require('socket.io-client');
 const RTMaps = require('../public/maps.js');
+const { makeProfile } = require('./helpers/profile.js');
 
 const URL = process.argv[2] || 'http://localhost:4100';
 const NUM_BOTS = Math.min(8, Number(process.argv[3]) || 3);
@@ -20,27 +21,45 @@ let sawItemPickup = false;
 let sawItemUse = false;
 let stateCount = 0;
 let raceStatus = 'lobby';
+// Every bot's profile id, collected as each one bootstraps. Populated before
+// the race ever starts, so finish() can check the leaderboard for leaks.
+const createdPids = [];
 
 function log(...args) { console.log(new Date().toISOString().slice(11, 19), ...args); }
 
-function makeBot(name, isHost) {
-  const socket = io(URL, { transports: ['websocket'] });
+// Bootstraps a profile and also captures its id (makeProfile only returns the
+// cookie). The extra GET reuses the cookie just set, so it reads the existing
+// profile rather than minting a second one.
+async function makeProfileWithId(name) {
+  const cookie = await makeProfile(URL, name);
+  const body = await (await fetch(`${URL}/api/profile/me`, { headers: { cookie } })).json();
+  createdPids.push(body.id);
+  return cookie;
+}
+
+function makeBot(name, isHost, cookie) {
+  const socket = io(URL, { transports: ['websocket'], extraHeaders: { Cookie: cookie } });
   const bot = { name, socket, id: null, input: { up: false, down: false, left: false, right: false }, lastItem: null };
   bots.push(bot);
 
   socket.on('connect', () => {
     bot.id = socket.id;
     if (isHost) {
-      socket.emit('createRoom', { name }, (res) => {
+      socket.emit('createRoom', {}, (res) => {
         if (!res.ok) { console.error('createRoom failed', res); process.exit(1); }
         roomCode = res.code;
         log(`${name} created room ${roomCode} on map ${MAP.name}`);
         socket.emit('selectMap', { mapId: MAP.id });
         // spawn the rest once the room exists
-        for (let i = 1; i < NUM_BOTS; i++) makeBot(`Bot${i}`, false);
+        (async () => {
+          for (let i = 1; i < NUM_BOTS; i++) {
+            const c = await makeProfileWithId(`Bot${i}`);
+            makeBot(`Bot${i}`, false, c);
+          }
+        })().catch((e) => { console.error(e.message); process.exit(1); });
       });
     } else {
-      socket.emit('joinRoom', { code: roomCode, name }, (res) => {
+      socket.emit('joinRoom', { code: roomCode }, (res) => {
         if (!res.ok) { console.error('joinRoom failed', res); process.exit(1); }
         log(`${name} joined ${roomCode}`);
         socket.emit('toggleReady');
@@ -103,23 +122,39 @@ function makeBot(name, isHost) {
     raceOverReceived = true;
     log('RACE OVER');
     results.forEach((r, i) => log(`  ${i + 1}. ${r.name} — ${r.finished ? (r.time / 1000).toFixed(1) + 's' : 'DNF (laps ' + r.laps + ')'}`));
-    finish(results);
+    finish(results).catch((e) => { console.error(e.message); process.exit(1); });
   });
 
   return bot;
 }
 
-function finish(results) {
+async function finish(results) {
+  // The board is populated only now that a race has completed, so this is the
+  // one place a pid leak in view() would actually be visible.
+  let lbOk = false, lbPopulated = false, lbNoPid = false;
+  try {
+    const body = await (await fetch(`${URL}/api/leaderboard`)).json();
+    lbOk = true;
+    lbPopulated = Array.isArray(body.standings) && body.standings.length > 0;
+    const serialized = JSON.stringify(body);
+    lbNoPid = createdPids.length > 0 && createdPids.every((pid) => !serialized.includes(pid));
+    log(`leaderboard: standings=${body.standings.length} recordsMaps=${Object.keys(body.records).length}`);
+  } catch (e) {
+    log(`leaderboard fetch failed: ${e.message}`);
+  }
+
   const pass =
     raceOverReceived &&
     stateCount > 50 &&
     sawItemPickup &&
-    results.some((r) => r.finished);
+    results.some((r) => r.finished) &&
+    lbOk && lbPopulated && lbNoPid;
   log('--- RESULTS ---');
   log(`states received: ${stateCount}`);
   log(`item picked up: ${sawItemPickup}, item used: ${sawItemUse}`);
   log(`closest approach to a pad: ${Math.round(global.minPadDist || -1)}px`);
   log(`race finished cleanly: ${raceOverReceived}`);
+  log(`leaderboard ok=${lbOk} populated=${lbPopulated} noPid=${lbNoPid}`);
   log(pass ? 'PASS' : 'FAIL');
   bots.forEach((b) => b.socket.disconnect());
   process.exit(pass ? 0 : 1);
@@ -132,4 +167,6 @@ setTimeout(() => {
   process.exit(anyState ? 2 : 1);
 }, 120000);
 
-makeBot('HostBot', true);
+makeProfileWithId('HostBot')
+  .then((cookie) => makeBot('HostBot', true, cookie))
+  .catch((e) => { console.error(e.message); process.exit(1); });
