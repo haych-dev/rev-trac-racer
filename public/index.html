@@ -35,7 +35,9 @@
       <div class="divider"><span>or join a room</span></div>
 
       <div class="join-row">
-        <input id="code-input" maxlength="4" placeholder="CODE" autocomplete="off" />
+        <!-- The input is disabled alongside the button: its Enter handler calls
+             joinRoom() directly, so leaving it live is a way around the gate. -->
+        <input id="code-input" maxlength="4" placeholder="CODE" autocomplete="off" disabled />
         <button id="btn-join" class="btn" disabled>Join</button>
       </div>
       <p id="home-error" class="error"></p>

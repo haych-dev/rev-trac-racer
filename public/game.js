@@ -214,6 +214,9 @@
     $('name-input').value = profile.name || '';
     $('btn-create').disabled = !claimed;
     $('btn-join').disabled = !claimed;
+    // The code field must move with the button: its Enter handler calls
+    // joinRoom() directly, so a live input is a route around the whole gate.
+    $('code-input').disabled = !claimed;
     $('name-status').textContent = claimed
       ? `Racing as ${profile.name}`
       : 'Pick a name to start racing';
@@ -261,7 +264,17 @@
     return false;
   }
 
+  // Belt and braces with the disabled inputs above. `socket` is null until
+  // bootstrap resolves, and stays null if it fails, so any path that reaches an
+  // emit must survive that rather than throwing a bare TypeError at the user.
+  function socketReady() {
+    if (socket) return true;
+    $('home-error').textContent = 'Still connecting — try again in a moment.';
+    return false;
+  }
+
   $('btn-create').onclick = () => {
+    if (!socketReady()) return;
     socket.emit('createRoom', {}, (res) => {
       if (!res.ok) {
         if (!handleRoomError(res)) $('home-error').textContent = res.error || 'Could not create room';
@@ -275,6 +288,7 @@
   $('btn-join').onclick = joinRoom;
   $('code-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinRoom(); });
   function joinRoom() {
+    if (!socketReady()) return;
     const code = $('code-input').value.trim().toUpperCase();
     if (code.length !== 4) { $('home-error').textContent = 'Enter a 4-letter room code'; return; }
     socket.emit('joinRoom', { code }, (res) => {
@@ -933,6 +947,7 @@
     $('name-status').className = 'hint error';
     $('btn-create').disabled = true;
     $('btn-join').disabled = true;
+    $('code-input').disabled = true;
   }
 
   bootstrap();
