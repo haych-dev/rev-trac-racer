@@ -8,7 +8,13 @@ services:
       - "3005:3005"
     environment:
       PORT: "3005"
-    # No volumes and no env_file: rooms and races live in memory only, and the
-    # game needs no credentials — so there is nothing to persist or relabel for
-    # SELinux, unlike the two dashboards.
+    volumes:
+      # Profiles and the leaderboard. A named volume rather than a bind mount:
+      # the racer needs no credentials and nothing hand-edits this file, and it
+      # avoids both the SELinux ':z' relabel and the setfacl uid-100 dance the
+      # two dashboards need on the Rocky host.
+      - rtr-data:/app/data
     restart: unless-stopped
+
+volumes:
+  rtr-data:

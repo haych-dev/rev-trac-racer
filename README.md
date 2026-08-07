@@ -63,6 +63,42 @@ new track stays in bounds and never overlaps itself.
 - The host picks the track; non-host players ready up; the host starts the race
 - After a race, results are shown and everyone returns to the lobby for a rematch
 
+## Driver profiles
+
+A driver name is required, and it belongs to you. On your first visit the server
+sets a signed `rtr_pid` cookie and your name is claimed by that profile, so
+nobody else can race under it — the server never accepts a name from the client
+when you create or join a room. Renaming keeps your stats, because they are held
+against the profile rather than the name.
+
+Clearing your cookies orphans the name. Release it with:
+
+```bash
+docker exec rev-trac-racer node scripts/admin.js release "Old Name"
+docker exec rev-trac-racer node scripts/admin.js list
+```
+
+## Leaderboard
+
+Two boards, at **Leaderboard** on the home screen:
+
+- **Track records** — the fastest race time per track. Solo runs count; a fast
+  time is fast whether or not anyone else was on track. Records are only written
+  for standard 3-lap races, so a `LAPS=1` test run can never set one.
+- **Standings** — races, wins and podiums, counted only for races with 2 or more
+  distinct profiles, so an empty room earns nothing.
+
+## Environment
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PORT` | 3000 | Listen port (3005 in the container) |
+| `LAPS` | 3 | Laps per race; any value other than 3 disables track-record writing entirely |
+| `RTR_STORE_PATH` | `data/store.json` | Where profiles and the leaderboard live — point it at a temp file when running tests |
+| `RTR_DEBUG` | unset | `1` exposes `/debug/rooms`, which leaks room codes, socket ids and player names |
+| `RTR_SECRET` | generated | Cookie signing key; generated on first boot and persisted in the store, so identity survives restarts |
+| `RTR_TRUST_PROXY` | unset | `1` makes the per-IP rate limits read `X-Forwarded-For`. Leave it unset unless a trusted proxy sits in front — otherwise a client can rotate the header and defeat every per-IP limit |
+
 ## Tech
 
 - Node.js + Express + Socket.IO
@@ -71,22 +107,24 @@ new track stays in bounds and never overlaps itself.
 
 ## Tests
 
-Run the server with quick 1-lap races, then the bot harness:
+Server-free unit tests:
 
 ```bash
-PORT=4100 LAPS=1 node server.js
+npm test        # store, profiles, ratelimit, leaderboard, map validation
+```
+
+The socket harnesses need a running server. Always point `RTR_STORE_PATH` at a
+throwaway file so test drivers never reach the real leaderboard:
+
+```bash
+RTR_STORE_PATH=/tmp/rtr-test.json PORT=4100 LAPS=1 node server.js
 ```
 
 ```bash
-node test/bots.js http://localhost:4100 8 0
+node test/bots.js http://localhost:4100 8 0   # full race with 8 bot drivers
+node test/capacity.js http://localhost:4100   # 8-player cap, mid-race join
+node test/exit.js http://localhost:4100       # mid-race exit
+node test/security.js http://localhost:4100   # identity and hardening
 ```
 
-(the last argument is the map id, 0–7)
-
-```bash
-node test/capacity.js http://localhost:4100
-```
-
-`test/bots.js` runs a full race with N bot drivers (join → ready → race →
-item pickup/use → finish). `test/capacity.js` verifies the 8-player cap and
-mid-race join rejection.
+(the second argument to `bots.js` is the map id, 0–7)
