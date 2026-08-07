@@ -233,6 +233,7 @@ the fold on a laptop while still being open by default for first-timers.
 | `input` | 60/s per socket | drop silently |
 | `useItem` | 10/s per socket | drop silently |
 | `createRoom` / `joinRoom` | 5 per 10s per socket | error callback |
+| `GET /api/profile/me` — minting only | 30/min per IP | HTTP 429 |
 | `POST /api/profile/name` | 30/min per IP | HTTP 429 |
 | Concurrent sockets per IP | 64 | refuse connection |
 | Total rooms | 200 | `createRoom` errors |
@@ -241,6 +242,14 @@ the fold on a laptop while still being open by default for first-timers.
 Dropping input floods silently is correct rather than disconnecting: the tick
 reads whichever value arrived last, so a flood was never a speed advantage in
 the first place — only a resource cost.
+
+`GET /api/profile/me` is limited because minting is the one unauthenticated path
+that *writes*: a request with no valid cookie creates a profile and rewrites the
+whole store file synchronously. Left open it is an amplification vector — 300
+requests produced 300 profiles and 2.9s of blocked event loop in testing, which
+degrades the game for everyone racing. The limit applies only when a request
+actually mints; a request presenting a valid cookie is a pure read and is never
+throttled, so a returning player is unaffected.
 
 ### Why the per-IP limits are loose
 

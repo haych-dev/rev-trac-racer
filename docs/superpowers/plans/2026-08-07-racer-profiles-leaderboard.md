@@ -1134,12 +1134,17 @@ const limJoin = createLimiter({ capacity: 5, refillPerSec: 0.5 }); // 5 per 10s
 // office can share one NAT address — tight per-IP limits would punish the
 // normal case. These are DoS backstops, not the integrity mechanism.
 const limName = createLimiter({ capacity: 30, refillPerSec: 0.5 }); // 30/min
+// Minting is the only unauthenticated path that WRITES: a request with no valid
+// cookie creates a profile and rewrites the whole store synchronously. Left open
+// it is an amplification vector. Only applied when a request actually mints, so
+// a returning player presenting a valid cookie is never throttled.
+const limMint = createLimiter({ capacity: 30, refillPerSec: 0.5 }); // 30/min
 const MAX_SOCKETS_PER_IP = 64;
 const socketsPerIp = new Map();
 
 setInterval(() => {
   const idle = 10 * 60 * 1000;
-  limInput.sweep(idle); limItem.sweep(idle);
+  limInput.sweep(idle); limItem.sweep(idle); limMint.sweep(idle);
   limJoin.sweep(idle); limName.sweep(idle);
 }, 60 * 1000).unref();
 
@@ -1170,6 +1175,10 @@ app.get('/api/profile/me', (req, res) => {
   const id = profiles.verify(token);
   if (id && profiles.get(id)) {
     return res.json({ id, name: profiles.get(id).name });
+  }
+  // Only a minting request is throttled — the read path above already returned.
+  if (!limMint.allow(ipOf(req))) {
+    return res.status(429).json({ ok: false, error: 'Too many new profiles — wait a moment' });
   }
   const minted = profiles.mint();
   // res.cookie() is native to Express — only *reading* req.cookies would need
@@ -1297,11 +1306,23 @@ function emit(sock, event, payload) {
       !JSON.stringify(lobby).includes(first.body.id));
 
     console.log('rate limiting');
+    // input/useItem floods are dropped SILENTLY, so "was it dropped" is not
+    // observable from a client. What IS observable is that the socket survives
+    // and keeps answering — a real robustness property, but NOT proof that the
+    // limiter exists. The limiter is proven below, via the one guard that
+    // reports over-limit back to the caller.
     for (let i = 0; i < 400; i++) good.emit('input', { up: true, down: false, left: false, right: false });
     await new Promise((r) => setTimeout(r, 300));
     check('an input flood does not kill the socket', good.connected === true);
     const stillWorks = await emit(good, 'joinRoom', { code: created.code });
     check('the socket still answers after a flood', typeof stillWorks === 'object');
+
+    // createRoom/joinRoom is capped at 5 per 10s per socket AND reports
+    // over-limit to the caller, so this is the limiter's observable proof.
+    const burst = [];
+    for (let i = 0; i < 9; i++) burst.push(await emit(good, 'joinRoom', { code: created.code }));
+    check('a joinRoom burst is rate limited',
+      burst.some((r) => r && r.error === 'Slow down'));
 
     console.log('debug route');
     const dbg = await fetch(`${URL}/debug/rooms`);
@@ -1313,8 +1334,19 @@ function emit(sock, event, payload) {
     check('/api/leaderboard responds 200', lb.status === 200);
     check('/api/leaderboard has the expected shape',
       Array.isArray(lbBody.standings) && typeof lbBody.records === 'object');
-    check('/api/leaderboard leaks no profile id',
-      !JSON.stringify(lbBody).includes(first.body.id));
+    // No race finishes in this suite, so standings is empty here and a
+    // "contains no pid" assertion would pass even if view() leaked every id.
+    // Assert the precondition instead; the real leak check lives in
+    // test/bots.js, which reads this endpoint after a genuine race.
+    check('standings is empty before any race has finished', lbBody.standings.length === 0);
+
+    // Minting is the only unauthenticated path that writes to the store, so it
+    // must throttle. Run this last — it burns this IP's mint budget.
+    let mintLimited = false;
+    for (let i = 0; i < 40; i++) {
+      if ((await fetch(`${URL}/api/profile/me`)).status === 429) { mintLimited = true; break; }
+    }
+    check('profile minting is rate limited', mintLimited);
   } catch (e) {
     console.error('threw:', e && e.message);
     check('no exception during the run', false);
@@ -1601,6 +1633,43 @@ makeProfile(URL, 'HostBot')
 ```
 
 Also drop the now-ignored `name` from both emits: `socket.emit('createRoom', {}, ...)` and `socket.emit('joinRoom', { code: roomCode }, ...)`.
+
+- [ ] **Step 2b: Assert the leaderboard leaks no pid, after a real race**
+
+`test/security.js` cannot verify this: no race finishes there, so its standings are empty and a "contains no pid" assertion would pass even if `view()` leaked every id. `bots.js` is the only harness where a genuine race populates the board, so the assertion belongs here.
+
+In `test/bots.js`, capture each bot's profile id alongside its cookie. `makeProfile` currently returns only the cookie string — have the host bot also keep the id from the bootstrap response, or collect the ids into a module-level array as each profile is created.
+
+Then in `finish()`, before the `process.exit`, add:
+
+```js
+  // The board is populated only now that a race has completed, so this is the
+  // one place a pid leak in view() would actually be visible.
+  let lbOk = false, lbPopulated = false, lbNoPid = false;
+  try {
+    const body = await (await fetch(`${URL}/api/leaderboard`)).json();
+    lbOk = true;
+    lbPopulated = Array.isArray(body.standings) && body.standings.length > 0;
+    const serialized = JSON.stringify(body);
+    lbNoPid = createdPids.length > 0 && createdPids.every((pid) => !serialized.includes(pid));
+    log(`leaderboard: standings=${body.standings.length} recordsMaps=${Object.keys(body.records).length}`);
+  } catch (e) {
+    log(`leaderboard fetch failed: ${e.message}`);
+  }
+```
+
+and fold all three into the `pass` expression, so a leak fails the harness:
+
+```js
+  const pass =
+    raceOverReceived &&
+    stateCount > 50 &&
+    sawItemPickup &&
+    results.some((r) => r.finished) &&
+    lbOk && lbPopulated && lbNoPid;
+```
+
+`finish()` must become `async` for the `await`, and its call site in the `raceOver` handler updated accordingly. Report the `standings=` line from your run — a non-zero count is what makes `lbNoPid` meaningful rather than vacuous.
 
 - [ ] **Step 3: Update `test/capacity.js`**
 
