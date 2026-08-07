@@ -71,12 +71,28 @@ nobody else can race under it — the server never accepts a name from the clien
 when you create or join a room. Renaming keeps your stats, because they are held
 against the profile rather than the name.
 
-Clearing your cookies orphans the name. Release it with:
+Clearing your cookies orphans the name. Listing profiles is read-only and safe
+to run against a live server:
 
 ```bash
-docker exec rev-trac-racer node scripts/admin.js release "Old Name"
 docker exec rev-trac-racer node scripts/admin.js list
 ```
+
+Releasing a name is not: the running server holds the store in memory and
+overwrites the file on its next save, so editing it from a second process
+while the server is up (`docker exec ... release`) reports success and is then
+silently reverted. Stop the service first, run the one-off container against
+the same volume, then start it back up:
+
+```bash
+docker compose stop racer
+docker compose run --rm racer node scripts/admin.js release "Old Name"
+docker compose start racer
+```
+
+`scripts/admin.js` refuses to run `release` at all if it detects something
+listening on the server's port, precisely to catch the `docker exec` form
+above before it does damage.
 
 ## Leaderboard
 
@@ -84,7 +100,11 @@ Two boards, at **Leaderboard** on the home screen:
 
 - **Track records** — the fastest race time per track. Solo runs count; a fast
   time is fast whether or not anyone else was on track. Records are only written
-  for standard 3-lap races, so a `LAPS=1` test run can never set one.
+  for standard 3-lap races, so a `LAPS=1` test run can never set one. A record
+  row's name is a snapshot taken when that time was set, refreshed only when
+  the same driver later beats it — so a rename (or a released-then-reclaimed
+  name) can leave a stale name on the records board until its holder posts a
+  faster time. This is expected, not a bug.
 - **Standings** — races, wins and podiums, counted only for races with 2 or more
   distinct profiles, so a solo race earns nothing.
 
