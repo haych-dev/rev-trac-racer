@@ -19,7 +19,7 @@ Every task's requirements implicitly include these.
 - **Name rules, exact:** trimmed, regex `/^[A-Za-z0-9 _-]{3,16}$/`. Uniqueness is case-insensitive via a stored `nameLower`.
 - **Cookie:** name `rtr_pid`, value `<uuid>.<hmac-hex-32>`, flags `httpOnly`, `SameSite=Lax`, `Path=/`, `Max-Age=157680000` (5y). **Never set `Secure`** — mktools serves plain HTTP over LAN and a Secure cookie would never be sent, silently breaking all identity.
 - **Canonical laps for records is 3.** When `TOTAL_LAPS !== 3`, write no track records at all.
-- **`BOOST_SPEED = 660` is duplicated** in `leaderboard.js` for the plausibility floor and must stay equal to the value in `server.js:59`. A comment must say so in both places.
+- **`BOOST_SPEED = 660` lives in `constants.js`** and is imported by both `server.js` and `leaderboard.js`. Do not redeclare the literal in either file — `leaderboard.js` cannot `require('./server.js')` (that would boot an HTTP listener), so a shared module is what keeps the plausibility floor and the physics honest without a sync-by-comment invariant.
 - **Profile IDs are never sent to a client.** Not in `lobby`, not in `state`, not in `raceOver`, not in `/api/leaderboard`.
 - **Port stays 3005** on mktools (`PORT` env, published in compose).
 - Store path is overridable with `RTR_STORE_PATH`; default `<repo>/data/store.json`.
@@ -32,6 +32,7 @@ Every task's requirements implicitly include these.
 
 | File | Responsibility |
 |---|---|
+| `constants.js` | Physics values shared by the simulation and the leaderboard's plausibility floor |
 | `store.js` | Load/save one JSON file atomically; own the schema + migration |
 | `profiles.js` | Mint IDs, sign/verify cookies, validate/claim/release names, parse cookie headers |
 | `leaderboard.js` | Record a finished race; derive standings + track records; plausibility floor |
@@ -622,11 +623,13 @@ git commit -m "feat(ratelimit): injectable-clock token bucket"
 ### Task 4: Leaderboard recording and queries
 
 **Files:**
-- Create: `leaderboard.js`
+- Create: `leaderboard.js`, `constants.js`
+- Modify: `server.js:55-63` (source `BOOST_SPEED` from `constants.js` instead of its own literal)
 - Test: `test/leaderboard.js`
 
 **Interfaces:**
 - Consumes: `createStore` (Task 1), `createProfiles` (Task 2).
+- Produces: `constants.js` exporting `{ BOOST_SPEED: 660 }`, imported by both `leaderboard.js` and `server.js`.
 - Produces: `createLeaderboard(store, profiles) -> { recordRace({ mapId, laps, entries, at? }), view(), minPlausibleMs(mapId, laps) }`.
   - `entries` is `[{ pid, name, pos, timeMs, finished, retired }]`, `pos` 1-based.
   - `recordRace` returns `{ standings: boolean, records: string[] }` (`records` = pids whose record improved).
@@ -837,7 +840,46 @@ process.exit(failed.length ? 1 : 0);
 Run: `node test/leaderboard.js`
 Expected: FAIL — `Cannot find module '../leaderboard.js'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **Step 3: Create the shared constants module**
+
+`leaderboard.js` needs `BOOST_SPEED` for its plausibility floor, and `server.js` needs it for the simulation. `leaderboard.js` cannot `require('./server.js')` — that would boot an HTTP listener — so the value lives in its own module and both import it.
+
+Create `constants.js`:
+
+```js
+/**
+ * Physics values shared by the simulation (server.js) and the leaderboard's
+ * plausibility floor (leaderboard.js).
+ *
+ * These live here rather than in server.js because requiring server.js starts
+ * an HTTP listener as a side effect, so nothing else can import from it.
+ */
+module.exports = {
+  // Top speed while a Chevron Boost is active. The leaderboard's minimum
+  // plausible race time assumes a car holding this the whole way — which no
+  // real run can do, making the floor safe against false rejections.
+  BOOST_SPEED: 660,
+};
+```
+
+Then in `server.js`, replace the `const BOOST_SPEED = 660;` line (`server.js:59`) so the value has one home. Add the require next to the other module requires:
+
+```js
+const { BOOST_SPEED } = require('./constants.js');
+```
+
+and delete the `const BOOST_SPEED = 660;` line from the physics block, leaving the surrounding constants (`ACCEL`, `BRAKE`, `MAX_SPEED`, …) untouched.
+
+Verify the server still boots and races before moving on:
+
+```bash
+PORT=4102 LAPS=1 node server.js > /tmp/rtr-const.log 2>&1 &
+sleep 1 && node test/bots.js http://localhost:4102 2 0 | tail -2; kill %1
+```
+
+Expected: PASS — boost still works, so the constant is wired correctly.
+
+- [ ] **Step 4: Write minimal implementation**
 
 Create `leaderboard.js`:
 
@@ -853,10 +895,10 @@ Create `leaderboard.js`:
  */
 const RTMaps = require('./public/maps.js');
 const { MAX_RACES } = require('./store.js');
+// Shared with the simulation. The floor is only safe because it assumes a car
+// boosting the entire way, which no real run can do.
+const { BOOST_SPEED } = require('./constants.js');
 
-// Must stay equal to BOOST_SPEED in server.js — the floor is only safe because
-// it assumes a car boosting the entire way, which no real run can do.
-const BOOST_SPEED = 660;
 const CANON_LAPS = 3;
 const RECORDS_PER_MAP = 10;
 
@@ -964,12 +1006,12 @@ function createLeaderboard(store, profiles) {
 module.exports = { createLeaderboard, CANON_LAPS, RECORDS_PER_MAP };
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 5: Run test to verify it passes**
 
 Run: `node test/leaderboard.js`
 Expected: PASS
 
-- [ ] **Step 5: Add a test script and run the whole server-free suite**
+- [ ] **Step 6: Add a test script and run the whole server-free suite**
 
 Modify `package.json` — add to `"scripts"`:
 
@@ -980,7 +1022,7 @@ Modify `package.json` — add to `"scripts"`:
 Run: `npm test`
 Expected: three PASS lines, exit 0
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add leaderboard.js test/leaderboard.js package.json
