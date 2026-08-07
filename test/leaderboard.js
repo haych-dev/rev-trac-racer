@@ -140,6 +140,46 @@ console.log('best-only records');
   check('the row holds the best time', list[0].timeMs === 50_000);
 }
 
+console.log('top-10-per-map truncation');
+{
+  const { profiles, lb } = fixture();
+  // 14 distinct profiles each set a record on map 0, progressively slower.
+  for (let i = 0; i < 14; i++) {
+    const name = `Driver${i + 10}`;
+    const pid = driver(profiles, name);
+    lb.recordRace({
+      mapId: 0, laps: 3,
+      entries: [{ pid, name, pos: 1, timeMs: GOOD + i * 100, finished: true, retired: false }],
+    });
+  }
+  const list = lb.view().records['0'];
+  check('records cap at 10 per map', list.length === 10);
+  check('the kept rows are the 10 fastest',
+    list[0].timeMs === GOOD && list[9].timeMs === GOOD + 900);
+  check('kept rows stay sorted ascending',
+    list.every((r, i) => i === 0 || list[i - 1].timeMs <= r.timeMs));
+
+  // A newcomer faster than the slowest kept row must displace it.
+  const fastPid = driver(profiles, 'Latecomer');
+  lb.recordRace({
+    mapId: 0, laps: 3,
+    entries: [{ pid: fastPid, name: 'Latecomer', pos: 1, timeMs: GOOD - 500, finished: true, retired: false }],
+  });
+  const after = lb.view().records['0'];
+  check('a faster newcomer enters a full board', after[0].timeMs === GOOD - 500);
+  check('a full board stays at 10 after a displacement', after.length === 10);
+  check('the slowest row was evicted', after.every((r) => r.timeMs <= GOOD + 800));
+
+  // ...and one slower than every kept row must not appear at all.
+  const slowPid = driver(profiles, 'Slowpoke');
+  lb.recordRace({
+    mapId: 0, laps: 3,
+    entries: [{ pid: slowPid, name: 'Slowpoke', pos: 1, timeMs: GOOD + 5000, finished: true, retired: false }],
+  });
+  check('a slower newcomer does not appear on a full board',
+    lb.view().records['0'].every((r) => r.name !== 'Slowpoke'));
+}
+
 console.log('view() shape and leakage');
 {
   const { profiles, lb } = fixture();
