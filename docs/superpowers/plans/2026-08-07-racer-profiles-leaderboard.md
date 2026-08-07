@@ -565,9 +565,14 @@ const mkEmpty = () => {
 const clean = mkEmpty();
 const skewed = mkEmpty();
 skewed.allow('k', t0 - 500); // backward jump, denied because the bucket is empty
-check('a rewound clock does not grant a token early',
-  skewed.allow('k', t0 + 500) === clean.allow('k', t0 + 500));
-check('500ms of a 1/s bucket is still not enough', clean.allow('k', t0 + 500) === false);
+// Capture each result exactly once. Calling allow() a second time inside a
+// later assertion would re-query already-advanced state and pass regardless of
+// whether the rewind guard exists.
+const cleanAt500 = clean.allow('k', t0 + 500);
+const skewedAt500 = skewed.allow('k', t0 + 500);
+check('a rewound clock does not grant a token early', skewedAt500 === cleanAt500);
+// Anchors the check above: without it, both sides returning true would pass too.
+check('500ms of a 1/s bucket is still not enough', cleanAt500 === false);
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
