@@ -16,7 +16,10 @@ function createLimiter({ capacity, refillPerSec }) {
     }
     const elapsed = Math.max(0, now - b.last) / 1000;
     b.tokens = Math.min(capacity, b.tokens + elapsed * refillPerSec);
-    b.last = now;
+    // Never let a rewound clock regress the stored timestamp. Date.now() moves
+    // backward under NTP correction, and a plain `b.last = now` would then
+    // credit the next forward call with refill for time that never passed.
+    b.last = Math.max(now, b.last);
     if (b.tokens < 1) return false;
     b.tokens -= 1;
     return true;
