@@ -2,8 +2,14 @@
  * Automated smoke test: N bot drivers create a room, ready up, race,
  * pick up items, use them, and (hopefully) finish laps.
  *
+ * Always start the server with RTR_STORE_PATH pointed at a throwaway file —
+ * this harness completes a real race and writes real leaderboard entries, so
+ * without it the bot drivers land on the actual board.
+ *
  * Usage: node test/bots.js [serverUrl] [numBots] [mapId]
- * Run the server with LAPS=1 for a quick test.
+ *   rm -f /tmp/rtr-harness.json
+ *   RTR_STORE_PATH=/tmp/rtr-harness.json PORT=4100 LAPS=1 node server.js &
+ *   node test/bots.js http://localhost:4100 4 0
  */
 const { io } = require('socket.io-client');
 const RTMaps = require('../public/maps.js');
