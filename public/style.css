@@ -69,6 +69,11 @@ input {
   outline: none;
 }
 input:focus { border-color: var(--navy); box-shadow: 0 0 0 3px rgba(30,57,107,.15); }
+/* A disabled input must look disabled. The code field's Enter handler is gated
+   in JS, but a field that looks typable and silently ignores input reads as
+   broken rather than as "claim a name first". Opacity matches .btn:disabled
+   below so the field and the buttons degrade identically. */
+input:disabled { opacity: .45; cursor: not-allowed; }
 
 .btn {
   display: inline-block;
