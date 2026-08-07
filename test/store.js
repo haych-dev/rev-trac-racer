@@ -161,6 +161,29 @@ check('claim(\'__proto__\', ...) fails', protoAttempt.ok === false);
 check('claim(\'__proto__\', ...) did not pollute Object.prototype',
   ({}).name === undefined && ({}).nameLower === undefined);
 
+// ---------------------------------------------------------------------------
+console.log('ratelimit.js');
+const { createLimiter } = require('../ratelimit.js');
+
+const lim = createLimiter({ capacity: 3, refillPerSec: 1 });
+const t0 = 1_000_000;
+check('allows up to capacity',
+  lim.allow('a', t0) && lim.allow('a', t0) && lim.allow('a', t0));
+check('blocks past capacity', lim.allow('a', t0) === false);
+check('keys are independent', lim.allow('b', t0) === true);
+check('refills over time', lim.allow('a', t0 + 1000) === true);
+check('refill does not exceed capacity',
+  lim.allow('a', t0 + 60000) && lim.allow('a', t0 + 60000) &&
+  lim.allow('a', t0 + 60000) && lim.allow('a', t0 + 60000) === false);
+
+const lim2 = createLimiter({ capacity: 1, refillPerSec: 1 });
+lim2.allow('gone', t0);
+check('forget drops a key', (lim2.forget('gone'), lim2.size() === 0));
+lim2.allow('old', t0);
+lim2.allow('new', t0 + 50_000);
+lim2.sweep(10_000, t0 + 60_000);
+check('sweep drops idle keys only', lim2.size() === 1);
+
 const failed = checks.filter((c) => !c.cond);
 console.log(failed.length ? `FAIL (${failed.length}/${checks.length})` : `PASS (${checks.length} checks)`);
 process.exit(failed.length ? 1 : 0);
