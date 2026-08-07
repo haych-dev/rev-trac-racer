@@ -25,6 +25,10 @@ app.get('/api/profile/me', (req, res) => {
   if (id && profiles.get(id)) {
     return res.json({ id, name: profiles.get(id).name });
   }
+  // Only a minting request is throttled — the read path above already returned.
+  if (!limMint.allow(ipOf(req))) {
+    return res.status(429).json({ ok: false, error: 'Too many new profiles — wait a moment' });
+  }
   const minted = profiles.mint();
   // res.cookie() is native to Express — only *reading* req.cookies would need
   // cookie-parser, and we parse the header ourselves instead.
@@ -123,13 +127,18 @@ const limJoin = createLimiter({ capacity: 5, refillPerSec: 0.5 }); // 5 per 10s
 // office can share one NAT address — tight per-IP limits would punish the
 // normal case. These are DoS backstops, not the integrity mechanism.
 const limName = createLimiter({ capacity: 30, refillPerSec: 0.5 }); // 30/min
+// Minting is the only unauthenticated path that WRITES: a request with no valid
+// cookie creates a profile and rewrites the whole store synchronously. Left open
+// it is an amplification vector. Only applied when a request actually mints, so
+// a returning player presenting a valid cookie is never throttled.
+const limMint = createLimiter({ capacity: 30, refillPerSec: 0.5 }); // 30/min
 const MAX_SOCKETS_PER_IP = 64;
 const socketsPerIp = new Map();
 
 setInterval(() => {
   const idle = 10 * 60 * 1000;
   limInput.sweep(idle); limItem.sweep(idle);
-  limJoin.sweep(idle); limName.sweep(idle);
+  limJoin.sweep(idle); limName.sweep(idle); limMint.sweep(idle);
 }, 60 * 1000).unref();
 
 function ipOf(req) {

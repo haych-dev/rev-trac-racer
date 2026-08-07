@@ -89,11 +89,23 @@ function emit(sock, event, payload) {
       !JSON.stringify(lobby).includes(first.body.id));
 
     console.log('rate limiting');
+    // input/useItem floods are dropped SILENTLY, so "was it dropped" is not
+    // observable from a client. What IS observable is that the socket survives
+    // and keeps answering — a real robustness property, but NOT proof that the
+    // limiter exists. The limiter is proven below, via the one guard that
+    // reports over-limit back to the caller.
     for (let i = 0; i < 400; i++) good.emit('input', { up: true, down: false, left: false, right: false });
     await new Promise((r) => setTimeout(r, 300));
     check('an input flood does not kill the socket', good.connected === true);
     const stillWorks = await emit(good, 'joinRoom', { code: created.code });
     check('the socket still answers after a flood', typeof stillWorks === 'object');
+
+    // createRoom/joinRoom is capped at 5 per 10s per socket AND reports
+    // over-limit to the caller, so this is the limiter's observable proof.
+    const burst = [];
+    for (let i = 0; i < 9; i++) burst.push(await emit(good, 'joinRoom', { code: created.code }));
+    check('a joinRoom burst is rate limited',
+      burst.some((r) => r && r.error === 'Slow down'));
 
     console.log('debug route');
     const dbg = await fetch(`${URL}/debug/rooms`);
@@ -105,8 +117,20 @@ function emit(sock, event, payload) {
     check('/api/leaderboard responds 200', lb.status === 200);
     check('/api/leaderboard has the expected shape',
       Array.isArray(lbBody.standings) && typeof lbBody.records === 'object');
-    check('/api/leaderboard leaks no profile id',
-      !JSON.stringify(lbBody).includes(first.body.id));
+    // No race finishes in this suite, so standings is empty here and a
+    // "contains no pid" assertion would pass even if view() leaked every id.
+    // Assert the precondition instead; the real leak check lives in
+    // test/bots.js, which reads this endpoint after a genuine race.
+    check('standings is empty before any race has finished', lbBody.standings.length === 0);
+
+    console.log('mint throttling');
+    // Minting is the only unauthenticated path that writes to the store, so it
+    // must throttle. Run this last — it burns this IP's mint budget.
+    let mintLimited = false;
+    for (let i = 0; i < 40; i++) {
+      if ((await fetch(`${URL}/api/profile/me`)).status === 429) { mintLimited = true; break; }
+    }
+    check('profile minting is rate limited', mintLimited);
   } catch (e) {
     console.error('threw:', e && e.message);
     check('no exception during the run', false);
