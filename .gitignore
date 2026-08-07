@@ -1,3 +1,9 @@
 node_modules/
 npm-debug.log*
 .DS_Store
+
+# Worktrees for isolated feature work
+.worktrees/
+
+# Profiles and leaderboard live here at runtime — never commit them
+data/
