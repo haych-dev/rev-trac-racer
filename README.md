@@ -86,7 +86,7 @@ Two boards, at **Leaderboard** on the home screen:
   time is fast whether or not anyone else was on track. Records are only written
   for standard 3-lap races, so a `LAPS=1` test run can never set one.
 - **Standings** — races, wins and podiums, counted only for races with 2 or more
-  distinct profiles, so an empty room earns nothing.
+  distinct profiles, so a solo race earns nothing.
 
 ## Environment
 
@@ -124,7 +124,17 @@ RTR_STORE_PATH=/tmp/rtr-test.json PORT=4100 LAPS=1 node server.js
 node test/bots.js http://localhost:4100 8 0   # full race with 8 bot drivers
 node test/capacity.js http://localhost:4100   # 8-player cap, mid-race join
 node test/exit.js http://localhost:4100       # mid-race exit
-node test/security.js http://localhost:4100   # identity and hardening
 ```
 
-(the second argument to `bots.js` is the map id, 0–7)
+`test/security.js` needs its own fresh server **and** a fresh store, because the
+mint-throttle check deliberately burns the IP's token budget and the standings
+check asserts an empty board. Run it on its own port:
+
+```bash
+rm -f /tmp/rtr-sec.json
+RTR_STORE_PATH=/tmp/rtr-sec.json PORT=4200 LAPS=1 node server.js &
+node test/security.js http://localhost:4200   # identity and hardening
+```
+
+(the arguments to `bots.js` are `[serverUrl] [numBots] [mapId]`, so the map id
+0–7 is the **last** one)
