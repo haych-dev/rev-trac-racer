@@ -6,8 +6,11 @@ const { BOOST_SPEED } = require('./constants.js');
 
 const app = express();
 app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.json({ limit: '4kb' }));
 
+// Leaks every room code, socket id and player name — off unless asked for.
 app.get('/debug/rooms', (req, res) => {
+  if (process.env.RTR_DEBUG !== '1') return res.status(404).end();
   res.json([...rooms.values()].map((r) => ({
     code: r.code,
     status: r.status,
@@ -16,8 +19,73 @@ app.get('/debug/rooms', (req, res) => {
   })));
 });
 
+app.get('/api/profile/me', (req, res) => {
+  const token = parseCookies(req.headers.cookie)[profiles.COOKIE];
+  const id = profiles.verify(token);
+  if (id && profiles.get(id)) {
+    return res.json({ id, name: profiles.get(id).name });
+  }
+  const minted = profiles.mint();
+  // res.cookie() is native to Express — only *reading* req.cookies would need
+  // cookie-parser, and we parse the header ourselves instead.
+  //
+  // No Secure flag: mktools serves plain HTTP over LAN, and a Secure cookie
+  // would never be sent, silently breaking identity for everyone. maxAge here
+  // is milliseconds, hence the *1000 on the seconds constant.
+  res.cookie(profiles.COOKIE, minted.token, {
+    httpOnly: true, sameSite: 'lax', path: '/', maxAge: COOKIE_MAX_AGE * 1000,
+  });
+  res.json({ id: minted.id, name: null });
+});
+
+app.post('/api/profile/name', (req, res) => {
+  if (!limName.allow(ipOf(req))) {
+    return res.status(429).json({ ok: false, error: 'Too many name changes — wait a moment' });
+  }
+  const token = parseCookies(req.headers.cookie)[profiles.COOKIE];
+  const id = profiles.verify(token);
+  if (!id || !profiles.get(id)) {
+    return res.status(400).json({ ok: false, error: 'No profile — reload the page' });
+  }
+  const result = profiles.claim(id, req.body && req.body.name);
+  if (!result.ok) return res.status(result.code || 400).json(result);
+  res.json({ ok: true, name: result.name });
+});
+
+app.get('/api/leaderboard', (req, res) => res.json(leaderboard.view()));
+
 const server = http.createServer(app);
 const io = new Server(server);
+
+// Resolve identity once per connection. A nameless-but-valid profile is a
+// normal state, not an attack: the client opens its socket on page load,
+// before the player has typed anything.
+io.use((socket, next) => {
+  const ip = ipOf(socket.request);
+  const open = socketsPerIp.get(ip) || 0;
+  if (open >= MAX_SOCKETS_PER_IP) return next(new Error('Too many connections'));
+  socketsPerIp.set(ip, open + 1);
+  socket.data.ip = ip;
+
+  const raw = parseCookies(socket.request.headers.cookie)[profiles.COOKIE];
+  if (!raw) socket.data.authErr = 'No profile';
+  else {
+    const id = profiles.verify(raw);
+    if (!id) socket.data.authErr = 'Invalid profile';
+    else socket.data.pid = id;
+  }
+  next();
+});
+
+// Returns the profile, or answers the callback and returns null.
+function requireProfile(socket, cb) {
+  const reply = typeof cb === 'function' ? cb : () => {};
+  if (socket.data.authErr) { reply({ ok: false, error: socket.data.authErr }); return null; }
+  const p = profiles.get(socket.data.pid);
+  if (!p) { reply({ ok: false, error: 'Invalid profile' }); return null; }
+  if (!p.name) { reply({ ok: false, error: 'Claim a name first' }); return null; }
+  return p;
+}
 
 const PORT = process.env.PORT || 3000;
 
@@ -34,6 +102,40 @@ const SECTORS = 8; // sequential checkpoints per lap, by arc-length
 const PAD_FRACS = [0.12, 0.28, 0.45, 0.62, 0.78, 0.92]; // item rows along the lap
 
 const { CARS } = require('./public/cars.js');
+
+const { createStore } = require('./store.js');
+const { createProfiles, parseCookies } = require('./profiles.js');
+const { createLeaderboard } = require('./leaderboard.js');
+const { createLimiter } = require('./ratelimit.js');
+
+const store = createStore();
+const profiles = createProfiles(store);
+const leaderboard = createLeaderboard(store, profiles);
+
+const MAX_ROOMS = 200;
+const COOKIE_MAX_AGE = 157680000; // 5 years, in seconds
+
+// Per-socket buckets: one socket is one player, so these can be tight.
+const limInput = createLimiter({ capacity: 60, refillPerSec: 60 });
+const limItem = createLimiter({ capacity: 10, refillPerSec: 10 });
+const limJoin = createLimiter({ capacity: 5, refillPerSec: 0.5 }); // 5 per 10s
+// Per-IP buckets: deliberately loose. mktools is LAN/VPN-only, so a whole
+// office can share one NAT address — tight per-IP limits would punish the
+// normal case. These are DoS backstops, not the integrity mechanism.
+const limName = createLimiter({ capacity: 30, refillPerSec: 0.5 }); // 30/min
+const MAX_SOCKETS_PER_IP = 64;
+const socketsPerIp = new Map();
+
+setInterval(() => {
+  const idle = 10 * 60 * 1000;
+  limInput.sweep(idle); limItem.sweep(idle);
+  limJoin.sweep(idle); limName.sweep(idle);
+}, 60 * 1000).unref();
+
+function ipOf(req) {
+  return (req.headers['x-forwarded-for'] || '').split(',')[0].trim() ||
+    req.socket?.remoteAddress || 'unknown';
+}
 
 const ITEMS = ['boost', 'cab', 'lock', 'shield', 'oops'];
 
@@ -111,6 +213,7 @@ function addPlayer(room, socket, name) {
   if (carId === -1) carId = 0;
   room.players.set(socket.id, {
     id: socket.id,
+    pid: socket.data.pid || null,
     name: String(name || 'Racer').trim().slice(0, 16) || 'Racer',
     carId,
     ready: false,
@@ -232,21 +335,44 @@ function checkRaceEnd(room) {
   if (allDone || timeUp || raceExpired) {
     room.status = 'finished';
     if (room.loop) { clearInterval(room.loop); room.loop = null; }
-    const results = racers
-      .map((p) => ({
-        name: p.name,
-        carId: p.carId,
-        finished: p.finished && !p.retired,
-        time: p.finished && !p.retired ? p.finishTime - room.raceStart : null,
-        laps: p.lap,
-      }))
-      .sort((a, b) => {
-        if (a.finished && b.finished) return a.time - b.time;
-        if (a.finished) return -1;
-        if (b.finished) return 1;
-        return b.laps - a.laps;
-      });
+    const ordered = racers.slice().sort((a, b) => {
+      const aDone = a.finished && !a.retired;
+      const bDone = b.finished && !b.retired;
+      if (aDone && bDone) return (a.finishTime - room.raceStart) - (b.finishTime - room.raceStart);
+      if (aDone) return -1;
+      if (bDone) return 1;
+      return b.lap - a.lap;
+    });
+
+    const results = ordered.map((p) => ({
+      name: p.name,
+      carId: p.carId,
+      finished: p.finished && !p.retired,
+      time: p.finished && !p.retired ? p.finishTime - room.raceStart : null,
+      laps: p.lap,
+    }));
     room.results = results;
+
+    // Durable stats. Never trusts anything a client sent — every field here
+    // comes from the simulation this process just ran.
+    try {
+      leaderboard.recordRace({
+        mapId: room.mapId,
+        laps: TOTAL_LAPS,
+        entries: ordered.map((p, i) => ({
+          pid: p.pid,
+          name: p.name,
+          pos: i + 1,
+          timeMs: p.finished && !p.retired ? p.finishTime - room.raceStart : null,
+          finished: p.finished,
+          retired: p.retired,
+        })),
+      });
+    } catch (e) {
+      // A leaderboard write must never take the race down with it.
+      console.error('[leaderboard] failed to record race:', e && e.message);
+    }
+
     io.to(room.code).emit('raceOver', { results });
     // reset ready flags for the next round
     room.players.forEach((p) => { p.ready = false; });
@@ -524,25 +650,33 @@ function tick(room) {
 // ---------------------------------------------------------------------------
 io.on('connection', (socket) => {
   console.log(`[conn] ${socket.id}`);
-  socket.on('createRoom', ({ name }, cb) => {
-    console.log(`[createRoom] ${socket.id} name=${name}`);
+  socket.on('createRoom', (_payload, cb) => {
+    const reply = typeof cb === 'function' ? cb : () => {};
+    if (!limJoin.allow(socket.id)) return reply({ ok: false, error: 'Slow down' });
+    const prof = requireProfile(socket, reply);
+    if (!prof) return;
+    if (rooms.size >= MAX_ROOMS) return reply({ ok: false, error: 'Server is busy — too many rooms' });
     if (socket.data.roomCode) removePlayer(socket);
-    const room = createRoom(socket, name);
-    cb({ ok: true, code: room.code });
+    // The name comes from the verified profile; any name in the payload is ignored.
+    const room = createRoom(socket, prof.name);
+    reply({ ok: true, code: room.code });
     broadcastLobby(room);
   });
 
-  socket.on('joinRoom', ({ code, name }, cb) => {
-    console.log(`[joinRoom] ${socket.id} code=${code} name=${name}`);
+  socket.on('joinRoom', ({ code } = {}, cb) => {
+    const reply = typeof cb === 'function' ? cb : () => {};
+    if (!limJoin.allow(socket.id)) return reply({ ok: false, error: 'Slow down' });
+    const prof = requireProfile(socket, reply);
+    if (!prof) return;
     const room = rooms.get(String(code || '').trim().toUpperCase());
-    if (!room) return cb({ ok: false, error: 'Room not found' });
-    if (room.players.size >= MAX_PLAYERS) return cb({ ok: false, error: 'Room is full (8 max)' });
+    if (!room) return reply({ ok: false, error: 'Room not found' });
+    if (room.players.size >= MAX_PLAYERS) return reply({ ok: false, error: 'Room is full (8 max)' });
     if (room.status !== 'lobby' && room.status !== 'finished') {
-      return cb({ ok: false, error: 'Race in progress — try again shortly' });
+      return reply({ ok: false, error: 'Race in progress — try again shortly' });
     }
     if (socket.data.roomCode) removePlayer(socket);
-    addPlayer(room, socket, name);
-    cb({ ok: true, code: room.code });
+    addPlayer(room, socket, prof.name);
+    reply({ ok: true, code: room.code });
     broadcastLobby(room);
   });
 
@@ -592,6 +726,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('input', (input) => {
+    if (!limInput.allow(socket.id)) return; // dropped, not disconnected
     const room = rooms.get(socket.data.roomCode);
     if (!room) return;
     const p = room.players.get(socket.id);
@@ -617,6 +752,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('useItem', () => {
+    if (!limItem.allow(socket.id)) return;
     const room = rooms.get(socket.data.roomCode);
     if (!room) return;
     const p = room.players.get(socket.id);
@@ -626,6 +762,14 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', (reason) => {
     console.log(`[disconnect] ${socket.id} reason=${reason}`);
+    limInput.forget(socket.id);
+    limItem.forget(socket.id);
+    limJoin.forget(socket.id);
+    const ip = socket.data.ip;
+    if (ip) {
+      const n = (socketsPerIp.get(ip) || 1) - 1;
+      if (n <= 0) socketsPerIp.delete(ip); else socketsPerIp.set(ip, n);
+    }
     removePlayer(socket);
   });
 });
