@@ -55,6 +55,7 @@
   let lastResults = null;
   let raceActive = false;
   let exitedRace = false; // player bailed out of the current race
+  let lastCountdownText = ''; // so the countdown only rebuilds when it ticks over
   let currentMapId = 0;
 
   // The real Rev-Trac logo, drawn on each track's infield.
@@ -829,15 +830,36 @@
       $('hud-time').textContent = '0:00.0';
     }
 
-    // countdown overlay
+    // Countdown overlay. Rebuilt only when the displayed value changes — the
+    // frame loop runs at 60fps, and replacing the node is what restarts the
+    // pop animation on each tick.
     const cd = $('countdown');
+    let cdText = '';
     if (st.status === 'countdown') {
       const remain = Math.ceil((st.countdownEnd - st.now) / 1000);
-      cd.textContent = remain > 0 ? remain : 'GO!';
+      cdText = remain > 0 ? String(remain) : 'GO!';
     } else if (st.status === 'racing' && st.now - st.raceStart < 900) {
-      cd.textContent = 'GO!';
-    } else {
+      cdText = 'GO!';
+    }
+    if (cdText !== lastCountdownText) {
+      lastCountdownText = cdText;
       cd.textContent = '';
+      if (cdText) {
+        // Hint goes ABOVE the numeral: the canvas draws the track name and a
+        // logo watermark through the centre, and anything below the number
+        // lands right on top of them.
+        if (cdText !== 'GO!') {
+          const hint = document.createElement('div');
+          hint.className = 'cd-hint';
+          hint.textContent = 'Get ready';
+          cd.appendChild(hint);
+        }
+        const num = document.createElement('div');
+        num.className = cdText === 'GO!' ? 'cd-num cd-go' : 'cd-num';
+        num.textContent = cdText;
+        cd.appendChild(num);
+      }
+      cd.classList.toggle('active', !!cdText);
     }
   }
 

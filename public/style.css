@@ -228,11 +228,48 @@ kbd {
 
 #countdown {
   position: absolute; inset: 0;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 140px; font-weight: 900;
-  color: #fff; text-shadow: 0 6px 30px rgba(0,0,0,.7);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 4px;
   pointer-events: none;
+  opacity: 0;
 }
+/* Dim the track underneath so the number carries from across the room — this
+   is often on a TV, and the green track washed out a plain white numeral. */
+#countdown.active {
+  opacity: 1;
+  background: radial-gradient(ellipse at center,
+    rgba(15,23,42,.74) 0%, rgba(15,23,42,.44) 42%, rgba(15,23,42,.06) 78%);
+}
+.cd-num {
+  font-size: clamp(160px, 26vw, 340px);
+  font-weight: 900; line-height: .88;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  text-shadow: 0 0 44px rgba(239,77,87,.55), 0 8px 40px rgba(0,0,0,.85);
+  animation: cd-pop .42s cubic-bezier(.2,1.4,.35,1) both;
+}
+.cd-num.cd-go {
+  color: #5ef08a;
+  text-shadow: 0 0 54px rgba(94,240,138,.6), 0 8px 40px rgba(0,0,0,.85);
+}
+/* Pill background so it stays readable over the track, the dashed centre line
+   or the logo watermark, wherever the layout puts it. */
+.cd-hint {
+  font-size: clamp(14px, 1.5vw, 22px); font-weight: 800;
+  letter-spacing: .22em; text-transform: uppercase;
+  color: rgba(255,255,255,.92);
+  background: rgba(15,23,42,.72);
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 999px;
+  padding: 7px 20px 7px 22px; /* extra left pad balances the letter-spacing */
+  animation: cd-fade .42s ease both;
+}
+@keyframes cd-pop {
+  from { transform: scale(.5);  opacity: 0; }
+  60%  { transform: scale(1.07); opacity: 1; }
+  to   { transform: scale(1);   opacity: 1; }
+}
+@keyframes cd-fade { from { opacity: 0; } to { opacity: 1; } }
 
 #toast {
   position: absolute; bottom: 60px; left: 0; right: 0;

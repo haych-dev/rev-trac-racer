@@ -98,6 +98,9 @@ const PORT = process.env.PORT || 3000;
 // ---------------------------------------------------------------------------
 const MAX_PLAYERS = 8;
 const TOTAL_LAPS = Number(process.env.LAPS) || 3;
+// Long enough that a late joiner can get their hands on the keys and read the
+// on-screen controls before the lights go out.
+const COUNTDOWN_MS = 10000;
 const TICK_RATE = 30;
 const DT = 1 / TICK_RATE;
 
@@ -307,7 +310,7 @@ function startRace(room) {
   room.pads = buildPads(map);
   room.results = [];
   room.firstFinishAt = 0;
-  room.countdownEnd = Date.now() + 3000;
+  room.countdownEnd = Date.now() + COUNTDOWN_MS;
   room.raceStart = room.countdownEnd;
 
   // Grid: two staggered columns just behind the start line, facing along the track
