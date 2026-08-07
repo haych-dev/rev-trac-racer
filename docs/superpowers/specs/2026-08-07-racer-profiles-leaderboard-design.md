@@ -157,6 +157,25 @@ can present any more. `scripts/admin.js release <name>` frees it. This is the
 one manual operation the design introduces, and it is the accepted cost of
 having no PIN.
 
+**The service must be stopped while it runs.** The store is a single in-memory
+object owned by the server process, persisted on write. A second process editing
+the file is invisible to the running server, and the server overwrites the file
+on its next save — so a release against a live server reports success, does not
+change the board, and is then silently reverted. Verified on the deployed host:
+after `docker exec … admin.js release`, the file showed zero named profiles while
+the API still served all of them, and one subsequent profile mint restored every
+name. The supported procedure is:
+
+```bash
+docker compose stop racer
+docker compose run --rm racer node scripts/admin.js release "Old Name"
+docker compose start racer
+```
+
+`docker compose run` mounts the same named volume, so the one-off container sees
+the same store. `admin.js` refuses to mutate when it detects the server
+listening on `PORT` in its own container, which catches the `docker exec` form.
+
 ## 3. Store shape
 
 ```json
