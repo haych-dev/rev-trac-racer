@@ -248,3 +248,37 @@ kbd {
 #results-table th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
 #results-table tr.first td { color: #b8860b; font-weight: 800; }
 .res-swatch { display: inline-block; width: 20px; height: 12px; border-radius: 3px; vertical-align: middle; margin-right: 8px; border: 1px solid rgba(0,0,0,.2); }
+
+/* ---- Name gate ---- */
+.name-row { display: flex; gap: 8px; }
+.name-row input { flex: 1; margin-bottom: 0; }
+.name-row .btn { width: 96px; }
+.hint.ok { color: #1d7a2b; }
+.hint.error { color: var(--red-dark); }
+.btn.subtle { background: transparent; border: 1px solid var(--border); margin-top: 10px; }
+
+/* ---- How to play ---- */
+.howto-details { margin: 14px 0; border-top: 1px solid var(--border); padding-top: 10px; }
+.howto-details summary { cursor: pointer; font-weight: 600; color: var(--navy); font-size: 14px; }
+.howto-details .howto { margin-top: 8px; border-top: none; padding-top: 4px; }
+.controls-table { width: 100%; margin: 6px 0 12px; border-collapse: collapse; }
+.controls-table td { padding: 3px 0; vertical-align: middle; font-size: 13.5px; color: var(--muted); }
+.controls-table td:last-child { text-align: right; white-space: nowrap; }
+.controls-table kbd { margin-left: 4px; }
+
+/* ---- Leaderboard ---- */
+#screen-leaderboard .panel h2 { color: var(--navy); }
+#standings-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+#standings-table th, #standings-table td {
+  padding: 8px 12px; text-align: left; font-size: 15px;
+  border-bottom: 1px solid var(--border);
+}
+#standings-table th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
+#standings-table td:nth-child(n+3) { text-align: right; font-variant-numeric: tabular-nums; }
+#standings-table th:nth-child(n+3) { text-align: right; }
+.record-block { margin-bottom: 14px; }
+.record-block h4 { margin: 6px 0 4px; font-size: 13px; color: var(--navy); }
+.record-table { width: 100%; border-collapse: collapse; }
+.record-table td { padding: 2px 0; font-size: 13.5px; color: var(--muted); }
+.record-table td:first-child { width: 28px; }
+.record-table td:last-child { text-align: right; font-variant-numeric: tabular-nums; }

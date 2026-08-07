@@ -1,6 +1,10 @@
 /* Rev-Trac Racer — client */
 (() => {
-  const socket = io();
+  // Deliberately not connected yet: the handshake resolves identity from the
+  // profile cookie, and that cookie only exists once /api/profile/me has
+  // responded. bootstrap() assigns this and then wires the handlers.
+  let socket = null;
+  let profile = { id: null, name: null };
 
   const WORLD_W = 1600, WORLD_H = 1000;
   const MAPS = RTMaps.MAPS;
@@ -34,6 +38,7 @@
   const screens = {
     home: $('screen-home'), lobby: $('screen-lobby'),
     game: $('screen-game'), results: $('screen-results'),
+    leaderboard: $('screen-leaderboard'),
   };
   function showScreen(name) {
     Object.entries(screens).forEach(([k, el]) => el.classList.toggle('active', k === name));
@@ -201,22 +206,69 @@
     c.restore();
   }
 
-  socket.on('connect', () => { myId = socket.id; });
-
   // ---- Home ----
-  const nameInput = $('name-input');
-  nameInput.value = localStorage.getItem('rtr-name') || '';
+  // The name lives on the server profile now — no localStorage copy, so there
+  // is only ever one answer to "who am I".
+  function renderNameGate() {
+    const claimed = !!profile.name;
+    $('name-input').value = profile.name || '';
+    $('btn-create').disabled = !claimed;
+    $('btn-join').disabled = !claimed;
+    $('name-status').textContent = claimed
+      ? `Racing as ${profile.name}`
+      : 'Pick a name to start racing';
+    $('name-status').className = claimed ? 'hint ok' : 'hint';
+    if (claimed) $('home-error').textContent = '';
+  }
 
-  function driverName() {
-    const n = nameInput.value.trim() || 'Racer';
-    localStorage.setItem('rtr-name', n);
-    return n;
+  async function claimName() {
+    const name = $('name-input').value.trim();
+    $('name-status').textContent = 'Saving…';
+    $('name-status').className = 'hint';
+    try {
+      const res = await fetch('/api/profile/name', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        $('name-status').textContent = body.error || 'Could not save that name';
+        $('name-status').className = 'hint error';
+        return;
+      }
+      profile.name = body.name;
+      renderNameGate();
+    } catch {
+      $('name-status').textContent = 'Network error — try again';
+      $('name-status').className = 'hint error';
+    }
+  }
+
+  $('btn-claim').onclick = claimName;
+  $('name-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') claimName(); });
+
+  // The server refuses every room action until a name is claimed. If that
+  // happens the local profile is stale, so drop back to the gate.
+  function handleRoomError(res) {
+    if (res.error === 'Claim a name first' || res.error === 'No profile' || res.error === 'Invalid profile') {
+      profile.name = null;
+      showScreen('home');
+      renderNameGate();
+      $('home-error').textContent = 'Please save a driver name first.';
+      return true;
+    }
+    return false;
   }
 
   $('btn-create').onclick = () => {
-    socket.emit('createRoom', { name: driverName() }, (res) => {
-      if (res.ok) showScreen('lobby');
-      else $('home-error').textContent = res.error || 'Could not create room';
+    socket.emit('createRoom', {}, (res) => {
+      if (!res.ok) {
+        if (!handleRoomError(res)) $('home-error').textContent = res.error || 'Could not create room';
+        return;
+      }
+      $('home-error').textContent = '';
+      showScreen('lobby');
     });
   };
 
@@ -225,24 +277,44 @@
   function joinRoom() {
     const code = $('code-input').value.trim().toUpperCase();
     if (code.length !== 4) { $('home-error').textContent = 'Enter a 4-letter room code'; return; }
-    socket.emit('joinRoom', { code, name: driverName() }, (res) => {
-      if (res.ok) { $('home-error').textContent = ''; showScreen('lobby'); }
-      else $('home-error').textContent = res.error || 'Could not join';
+    socket.emit('joinRoom', { code }, (res) => {
+      if (!res.ok) {
+        if (!handleRoomError(res)) $('home-error').textContent = res.error || 'Could not join';
+        return;
+      }
+      $('home-error').textContent = '';
+      showScreen('lobby');
     });
   }
 
-  // ---- Lobby ----
-  socket.on('lobby', (data) => {
-    lobby = data;
-    if (typeof data.mapId === 'number') currentMapId = data.mapId;
-    if (data.status === 'countdown') exitedRace = false; // new race starting
-    if ((data.status === 'countdown' || data.status === 'racing') && !exitedRace) {
-      if (!raceActive) { raceActive = true; showScreen('game'); }
-      return;
-    }
-    renderLobby();
-  });
+  // ---- How to play ----
+  // Rendered into both the home screen and the lobby; keep it one template so
+  // the two copies cannot drift apart.
+  const CONTROLS_HTML = `
+    <h3>Controls</h3>
+    <table class="controls-table">
+      <tr><td>Accelerate / brake</td><td><kbd>W</kbd><kbd>S</kbd> or <kbd>&uarr;</kbd><kbd>&darr;</kbd></td></tr>
+      <tr><td>Steer</td><td><kbd>A</kbd><kbd>D</kbd> or <kbd>&larr;</kbd><kbd>&rarr;</kbd></td></tr>
+      <tr><td>Use powerup</td><td><kbd>Space</kbd></td></tr>
+      <tr><td>Exit race</td><td><kbd>Esc</kbd></td></tr>
+    </table>
+    <h3>Powerups</h3>
+    <ul>
+      <li><b class="c-boost">&#10095;&#10095;&#10095; Chevron Boost</b> — hit warp speed for a couple of seconds</li>
+      <li><b class="c-cab">&#128203; CAB Meeting</b> — drop it behind you; whoever hits it gets stuck in review (spin out)</li>
+      <li><b class="c-lock">&#128274; Transport Lock</b> — freeze the car ahead of you</li>
+      <li><b class="c-shield">&#9889; Emergency Change</b> — shield that skips the red tape (5s immunity)</li>
+      <li><b class="c-oops">&#128165; OOPS!</b> — everyone ahead of you spins out</li>
+    </ul>
+    <p class="controls">Races are <b>3 laps</b>. Stay on the asphalt — grass is slow.
+       Drive through the <b>?</b> boxes to grab a powerup.</p>`;
 
+  function renderControls() {
+    $('controls-home').innerHTML = CONTROLS_HTML;
+    $('controls-lobby').innerHTML = CONTROLS_HTML;
+  }
+
+  // ---- Lobby ----
   function drawMapPreview(cv, map, selected) {
     const c = cv.getContext('2d');
     const scale = Math.min(cv.width / WORLD_W, cv.height / WORLD_H);
@@ -373,6 +445,8 @@
   };
   $('btn-back-lobby').onclick = () => showScreen('lobby');
 
+  // Names are server-validated to [A-Za-z0-9 _-], but escape anyway — the
+  // lobby and the leaderboard are where one player's text reaches another's DOM.
   function esc(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -380,22 +454,6 @@
   }
 
   // ---- Race networking ----
-  socket.on('state', (state) => {
-    latestState = state;
-    if (typeof state.mapId === 'number') currentMapId = state.mapId;
-    if (state.status === 'countdown') exitedRace = false; // new race starting
-    if ((state.status === 'countdown' || state.status === 'racing') && !raceActive && !exitedRace) {
-      raceActive = true;
-      smooth.clear();
-      showScreen('game');
-    }
-    const me = state.players.find((p) => p.id === myId);
-    $('btn-exit-race').style.display =
-      state.status === 'racing' && me && !me.finished ? '' : 'none';
-    // event toasts for me
-    if (me && me.event && EVENT_TOASTS[me.event]) showToast(EVENT_TOASTS[me.event]);
-  });
-
   function exitRace() {
     if (!raceActive) return;
     socket.emit('exitRace');
@@ -407,21 +465,6 @@
     renderLobby();
   }
   $('btn-exit-race').onclick = exitRace;
-
-  socket.on('raceOver', ({ results }) => {
-    raceActive = false;
-    exitedRace = false;
-    lastResults = results;
-    renderResults();
-    setTimeout(() => showScreen('results'), 1200);
-  });
-
-  socket.on('disconnect', () => {
-    raceActive = false;
-    lobby = null;
-    showScreen('home');
-    $('home-error').textContent = 'Disconnected from server';
-  });
 
   function renderResults() {
     const tbody = $('results-table').querySelector('tbody');
@@ -446,6 +489,56 @@
     const t = Math.floor((ms % 1000) / 100);
     return `${m}:${String(s).padStart(2, '0')}.${t}`;
   }
+
+  // ---- Leaderboard ----
+  // Lap times here are seconds-with-one-decimal, which fits a narrow table
+  // column — formatTime() above is the m:ss.t form the race HUD needs.
+  function fmtTime(ms) {
+    return typeof ms === 'number' ? `${(ms / 1000).toFixed(1)}s` : '—';
+  }
+
+  async function showLeaderboard() {
+    showScreen('leaderboard');
+    const tbody = document.querySelector('#standings-table tbody');
+    tbody.innerHTML = '';
+    $('standings-empty').textContent = 'Loading…';
+    $('records-wrap').innerHTML = '';
+    try {
+      const data = await (await fetch('/api/leaderboard')).json();
+
+      data.standings.forEach((s, i) => {
+        const best = Object.values(s.bestByMap || {});
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${i + 1}</td><td>${esc(s.name)}</td><td>${s.races}</td>` +
+          `<td>${s.wins}</td><td>${s.podiums}</td>` +
+          `<td>${best.length ? fmtTime(Math.min(...best)) : '—'}</td>`;
+        tbody.appendChild(tr);
+      });
+      $('standings-empty').textContent = data.standings.length
+        ? '' : 'No races yet — a race needs 2+ drivers to count.';
+
+      // One block per track that has any record, in map order.
+      const wrap = $('records-wrap');
+      const ids = Object.keys(data.records).map(Number).sort((a, b) => a - b);
+      if (!ids.length) wrap.innerHTML = '<p class="hint">No track records yet.</p>';
+      for (const id of ids) {
+        const map = MAPS.find((m) => m.id === id);
+        const rows = data.records[String(id)]
+          .map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.name)}</td><td>${fmtTime(r.timeMs)}</td></tr>`)
+          .join('');
+        const div = document.createElement('div');
+        div.className = 'record-block';
+        div.innerHTML = `<h4>${esc(map ? map.name : `Map ${id}`)}</h4>` +
+          `<table class="record-table"><tbody>${rows}</tbody></table>`;
+        wrap.appendChild(div);
+      }
+    } catch {
+      $('standings-empty').textContent = 'Could not load the leaderboard.';
+    }
+  }
+
+  $('btn-leaderboard').onclick = showLeaderboard;
+  $('btn-lb-back').onclick = () => showScreen(socket && socket.connected && lobby ? 'lobby' : 'home');
 
   // ---- Input ----
   const input = { up: false, down: false, left: false, right: false };
@@ -759,6 +852,90 @@
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+
+  // ---- Socket wiring ----
+  // Every server-push handler lives here rather than at module scope, because
+  // `socket` does not exist until bootstrap() has fetched the profile.
+  function wireSocket() {
+    socket.on('connect', () => { myId = socket.id; });
+
+    socket.on('lobby', (data) => {
+      lobby = data;
+      if (typeof data.mapId === 'number') currentMapId = data.mapId;
+      if (data.status === 'countdown') exitedRace = false; // new race starting
+      if ((data.status === 'countdown' || data.status === 'racing') && !exitedRace) {
+        if (!raceActive) { raceActive = true; showScreen('game'); }
+        return;
+      }
+      renderLobby();
+    });
+
+    socket.on('state', (state) => {
+      latestState = state;
+      if (typeof state.mapId === 'number') currentMapId = state.mapId;
+      if (state.status === 'countdown') exitedRace = false; // new race starting
+      if ((state.status === 'countdown' || state.status === 'racing') && !raceActive && !exitedRace) {
+        raceActive = true;
+        smooth.clear();
+        showScreen('game');
+      }
+      const me = state.players.find((p) => p.id === myId);
+      $('btn-exit-race').style.display =
+        state.status === 'racing' && me && !me.finished ? '' : 'none';
+      // event toasts for me
+      if (me && me.event && EVENT_TOASTS[me.event]) showToast(EVENT_TOASTS[me.event]);
+    });
+
+    socket.on('raceOver', ({ results }) => {
+      raceActive = false;
+      exitedRace = false;
+      lastResults = results;
+      renderResults();
+      setTimeout(() => showScreen('results'), 1200);
+    });
+
+    socket.on('disconnect', () => {
+      raceActive = false;
+      lobby = null;
+      showScreen('home');
+      $('home-error').textContent = 'Disconnected from server';
+    });
+  }
+
+  // ---- Bootstrap ----
+  async function bootstrap() {
+    renderControls();
+    let res;
+    try {
+      res = await fetch('/api/profile/me');
+    } catch {
+      profileUnavailable('Could not reach the server — reload to retry');
+      return;
+    }
+    // Minting is rate-limited, so this can return 429 with {ok:false,error}
+    // rather than {id,name}. Without this branch the page would read
+    // `body.name === null` off an error payload and carry on with an undefined
+    // id, leaving every join refused with no explanation on screen.
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      profileUnavailable(body.error || 'Could not reach the server — reload to retry');
+      return;
+    }
+    profile = await res.json();
+    // Only now is the cookie guaranteed to exist, so the handshake can resolve it.
+    socket = io();
+    wireSocket();
+    renderNameGate();
+  }
+
+  function profileUnavailable(msg) {
+    $('name-status').textContent = msg;
+    $('name-status').className = 'hint error';
+    $('btn-create').disabled = true;
+    $('btn-join').disabled = true;
+  }
+
+  bootstrap();
 
   // Dev/test hooks: render a single frame / a car body on demand
   // (headless tabs never fire rAF).
