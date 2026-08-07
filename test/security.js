@@ -1,12 +1,27 @@
 /**
  * Integration tests for the hardening claims in the spec.
- * Start a server first:
- *   RTR_STORE_PATH=/tmp/rtr-sec.json PORT=4200 LAPS=1 node server.js
- * Then: node test/security.js http://localhost:4200
+ *
+ * Needs a FRESH server AND a fresh store on every run: the mint-throttle check
+ * deliberately burns this IP's 30-token budget, and the standings check asserts
+ * an empty board. Re-running against a warm process or a surviving store file
+ * fails at bootstrap.
+ *
+ *   rm -f /tmp/rtr-sec.json
+ *   RTR_STORE_PATH=/tmp/rtr-sec.json PORT=4200 LAPS=1 node server.js &
+ *   node test/security.js http://localhost:4200
  */
 const { io } = require('socket.io-client');
 
 const URL = process.argv[2] || 'http://localhost:4200';
+
+// Several awaits below can hang rather than fail — a socket that never connects,
+// a 'lobby' event that never arrives. A hung suite is worse than a failed one,
+// so cap the whole run. This lives entirely in the test; production is untouched.
+setTimeout(() => {
+  console.log('FAIL (timed out after 30s — is the server fresh? this suite burns its IP mint budget)');
+  process.exit(1);
+}, 30000).unref();
+
 const checks = [];
 function check(label, cond) {
   checks.push({ label, cond: !!cond });
@@ -17,7 +32,7 @@ async function bootstrap() {
   const res = await fetch(`${URL}/api/profile/me`);
   const setCookie = res.headers.get('set-cookie') || '';
   const body = await res.json();
-  return { cookie: setCookie.split(';')[0], body };
+  return { cookie: setCookie.split(';')[0], raw: setCookie, body };
 }
 async function claim(cookie, name) {
   const res = await fetch(`${URL}/api/profile/name`, {
@@ -50,6 +65,13 @@ function emit(sock, event, payload) {
     const again = await fetch(`${URL}/api/profile/me`, { headers: { cookie: first.cookie } });
     const againBody = await again.json();
     check('an existing cookie keeps its id', againBody.id === first.body.id);
+    // These three attributes are the one requirement whose failure breaks
+    // identity silently for every player, so pin them rather than eyeballing
+    // curl output. Secure in particular MUST be absent: the host serves plain
+    // HTTP over LAN, and a Secure cookie would simply never be sent.
+    check('the cookie is HttpOnly', /HttpOnly/i.test(first.raw));
+    check('the cookie is NOT Secure', !/;\s*Secure/i.test(first.raw));
+    check('the cookie has a 5-year Max-Age', /Max-Age=157680000/.test(first.raw));
 
     console.log('name claiming');
     check('a 2-char name is rejected', (await claim(first.cookie, 'ab')).status === 400);
@@ -124,6 +146,21 @@ function emit(sock, event, payload) {
     check('standings is empty before any race has finished', lbBody.standings.length === 0);
 
     console.log('mint throttling');
+    // The per-IP limits key off ipOf(), so a caller must not be able to set that
+    // key. X-Forwarded-For is pure client input unless a trusted proxy sets it,
+    // and this app publishes its port directly. If ipOf trusted the header,
+    // rotating it would hand out a fresh 30-token bucket per value and every
+    // per-IP limit would enforce nothing. Runs before the plain mint check so it
+    // has to burn the real bucket through rotation to pass — which is the point.
+    let xffLimited = false;
+    for (let i = 0; i < 40; i++) {
+      const res = await fetch(`${URL}/api/profile/me`, {
+        headers: { 'x-forwarded-for': `1.2.3.${i}` },
+      });
+      if (res.status === 429) { xffLimited = true; break; }
+    }
+    check('a rotating X-Forwarded-For does not buy a fresh mint bucket', xffLimited);
+
     // Minting is the only unauthenticated path that writes to the store, so it
     // must throttle. Run this last — it burns this IP's mint budget.
     let mintLimited = false;

@@ -141,9 +141,18 @@ setInterval(() => {
   limJoin.sweep(idle); limName.sweep(idle); limMint.sweep(idle);
 }, 60 * 1000).unref();
 
+// The per-IP limits are DoS backstops, so their key must not be settable by the
+// caller being limited. X-Forwarded-For is pure client input unless a trusted
+// proxy sets it, and this app publishes its port directly with no proxy in
+// front — so it is consulted only when explicitly opted in. Without this,
+// rotating `X-Forwarded-For: 1.2.3.<n>` yields a fresh bucket per value and
+// every per-IP limit enforces nothing.
 function ipOf(req) {
-  return (req.headers['x-forwarded-for'] || '').split(',')[0].trim() ||
-    req.socket?.remoteAddress || 'unknown';
+  if (process.env.RTR_TRUST_PROXY === '1') {
+    const fwd = (req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    if (fwd) return fwd;
+  }
+  return req.socket?.remoteAddress || 'unknown';
 }
 
 const ITEMS = ['boost', 'cab', 'lock', 'shield', 'oops'];
