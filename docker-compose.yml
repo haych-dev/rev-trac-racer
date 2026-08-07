@@ -1,0 +1,14 @@
+services:
+  racer:
+    build: .
+    container_name: rev-trac-racer
+    ports:
+      # 3005 because the marketing dashboard (3000) and campaign dashboard
+      # (3001) already hold their ports on this host.
+      - "3005:3005"
+    environment:
+      PORT: "3005"
+    # No volumes and no env_file: rooms and races live in memory only, and the
+    # game needs no credentials — so there is nothing to persist or relabel for
+    # SELinux, unlike the two dashboards.
+    restart: unless-stopped
