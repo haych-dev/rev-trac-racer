@@ -1884,7 +1884,9 @@ In `public/index.html`, replace the name input and the `.howto` block (currently
       <div class="divider"><span>or join a room</span></div>
 
       <div class="join-row">
-        <input id="code-input" maxlength="4" placeholder="CODE" autocomplete="off" />
+        <!-- The input is disabled alongside the button: its Enter handler calls
+             joinRoom() directly, so leaving it live is a way around the gate. -->
+        <input id="code-input" maxlength="4" placeholder="CODE" autocomplete="off" disabled />
         <button id="btn-join" class="btn" disabled>Join</button>
       </div>
       <p id="home-error" class="error"></p>
@@ -1961,6 +1963,7 @@ Replace that line with `let socket = null;` and add near the top:
       $('name-status').className = 'hint error';
       $('btn-create').disabled = true;
       $('btn-join').disabled = true;
+      $('code-input').disabled = true;
       renderControls();
       return;
     }
@@ -1976,6 +1979,9 @@ Replace that line with `let socket = null;` and add near the top:
     $('name-input').value = profile.name || '';
     $('btn-create').disabled = !claimed;
     $('btn-join').disabled = !claimed;
+    // The code field must move with the button: its Enter handler calls
+    // joinRoom() directly, so a live input is a route around the whole gate.
+    $('code-input').disabled = !claimed;
     $('name-status').textContent = claimed
       ? `Racing as ${profile.name}`
       : 'Pick a name to start racing';
@@ -2016,6 +2022,15 @@ Wire the button and drop the old localStorage name handling (currently `game.js:
 Change both room emits to stop sending a name, and handle the profile refusals:
 
 ```js
+  // Belt and braces with the disabled inputs above. `socket` is null until
+  // bootstrap resolves, and stays null if it fails, so any path that reaches an
+  // emit must survive that rather than throwing a bare TypeError at the user.
+  function socketReady() {
+    if (socket) return true;
+    $('home-error').textContent = 'Still connecting — try again in a moment.';
+    return false;
+  }
+
   function handleRoomError(res) {
     if (res.error === 'Claim a name first' || res.error === 'No profile' || res.error === 'Invalid profile') {
       profile.name = null;
