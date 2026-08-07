@@ -130,6 +130,37 @@ const p2 = createProfiles(createStore(persistFile));
 check('profiles persist across reload', p2.get(minted.id).name === 'Persisted');
 check('a token still verifies after reload', p2.verify(minted.token) === minted.id);
 
+// verify() must never throw, even on a signature whose UTF-16 .length matches
+// the real one but whose byte length does not (regression for a real bug: an
+// astral-character signature has half as many UTF-16 code units as bytes).
+function verifiesToNullWithoutThrowing(token) {
+  try {
+    return ps.verify(token) === null;
+  } catch {
+    return false;
+  }
+}
+
+const astralSig = '\u{1F600}'.repeat(16); // 16 astral chars: .length 32, byte length 64
+check('astral-length signature returns null instead of throwing',
+  verifiesToNullWithoutThrowing(`${id}.${astralSig}`));
+check('empty signature returns null', verifiesToNullWithoutThrowing(`${id}.`));
+check('leading-dot token returns null', verifiesToNullWithoutThrowing('.abc'));
+
+const astralCookieHeader = `${ps.COOKIE}=${id}.${encodeURIComponent(astralSig)}`;
+const astralCookieToken = parseCookies(astralCookieHeader)[ps.COOKIE];
+check('percent-encoded astral cookie round-trips through parseCookies',
+  astralCookieToken === `${id}.${astralSig}`);
+check('a percent-encoded astral cookie verifies to null instead of throwing',
+  verifiesToNullWithoutThrowing(astralCookieToken));
+
+// prototype-pollution guard: '__proto__' must never be treated as a real id
+check('get(\'__proto__\') is not Object.prototype', ps.get('__proto__') === null);
+const protoAttempt = ps.claim('__proto__', 'Hacker');
+check('claim(\'__proto__\', ...) fails', protoAttempt.ok === false);
+check('claim(\'__proto__\', ...) did not pollute Object.prototype',
+  ({}).name === undefined && ({}).nameLower === undefined);
+
 const failed = checks.filter((c) => !c.cond);
 console.log(failed.length ? `FAIL (${failed.length}/${checks.length})` : `PASS (${checks.length} checks)`);
 process.exit(failed.length ? 1 : 0);

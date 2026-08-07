@@ -40,8 +40,14 @@ function createProfiles(store) {
     const id = token.slice(0, i);
     const sig = token.slice(i + 1);
     const want = sign(id);
-    if (sig.length !== want.length) return null;
-    if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(want))) return null;
+    // Compare BYTE length, not string .length: a crafted multi-byte/astral
+    // signature can have the same UTF-16 .length as `want` while producing a
+    // differently-sized Buffer, which makes timingSafeEqual throw instead of
+    // returning false. Guard on the actual buffer sizes it will compare.
+    const sigBuf = Buffer.from(sig);
+    const wantBuf = Buffer.from(want);
+    if (sigBuf.length !== wantBuf.length) return null;
+    if (!crypto.timingSafeEqual(sigBuf, wantBuf)) return null;
     return id;
   }
 
@@ -56,7 +62,15 @@ function createProfiles(store) {
   }
 
   function get(id) {
-    return (id && store.data.profiles[id]) || null;
+    // hasOwnProperty guard, not a bare `profiles[id]` truthiness check: without
+    // it, get('__proto__') would return Object.prototype (inherited, truthy),
+    // and claim() would then write name/nameLower onto Object.prototype itself.
+    // claim() and holderOf() both route profile lookups through this function
+    // (holderOf additionally only ever sees Object.entries()'s own-enumerable
+    // keys, which can't include an inherited '__proto__' either), so guarding
+    // here is sufficient.
+    if (!id || !Object.prototype.hasOwnProperty.call(store.data.profiles, id)) return null;
+    return store.data.profiles[id];
   }
 
   function validateName(raw) {
