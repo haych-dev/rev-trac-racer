@@ -387,6 +387,10 @@ function checkRaceEnd(room) {
           timeMs: p.finished && !p.retired ? p.finishTime - room.raceStart : null,
           finished: p.finished,
           retired: p.retired,
+          // Did this car actually drive? cpCount is the simulation's own count
+          // of arc-length sectors crossed, so a car parked on the grid is 0.
+          // Only cars that moved may open the 2-profile standings gate.
+          progressed: p.cpCount > 0,
         })),
       });
     } catch (e) {
@@ -695,6 +699,13 @@ io.on('connection', (socket) => {
     if (room.status !== 'lobby' && room.status !== 'finished') {
       return reply({ ok: false, error: 'Race in progress — try again shortly' });
     }
+    // One profile, one seat. Without this a single cookie could fill the grid
+    // and collect a set of stats per seat. The socket's own existing seat is
+    // exempt: rejoining from the same socket is legitimate and is handled by
+    // the removePlayer() below.
+    const dupe = [...room.players.values()]
+      .some((p) => p.id !== socket.id && p.pid && p.pid === socket.data.pid);
+    if (dupe) return reply({ ok: false, error: 'You are already in this room in another tab' });
     if (socket.data.roomCode) removePlayer(socket);
     addPlayer(room, socket, prof.name);
     reply({ ok: true, code: room.code });

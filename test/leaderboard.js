@@ -67,6 +67,100 @@ console.log('two-driver race');
   check('runner-up gets a podium', profiles.get(b).podiums === 1);
 }
 
+console.log('one profile holding several seats');
+{
+  const { profiles, lb } = fixture();
+  const farmer = driver(profiles, 'Farmer');
+  const rival = driver(profiles, 'Rival');
+  const res = lb.recordRace({
+    mapId: 0, laps: 3,
+    entries: [
+      { pid: farmer, name: 'Farmer', pos: 1, timeMs: GOOD, finished: true, retired: false, progressed: true },
+      { pid: farmer, name: 'Farmer', pos: 2, timeMs: GOOD + 1000, finished: true, retired: false, progressed: true },
+      { pid: farmer, name: 'Farmer', pos: 3, timeMs: GOOD + 2000, finished: true, retired: false, progressed: true },
+      { pid: rival, name: 'Rival', pos: 4, timeMs: GOOD + 3000, finished: true, retired: false, progressed: true },
+    ],
+  });
+  check('a genuine rival still opens standings', res.standings === true);
+  check('three seats earn one race, not three', profiles.get(farmer).races === 1);
+  check('three seats earn one win', profiles.get(farmer).wins === 1);
+  check('three seats earn one podium, not three', profiles.get(farmer).podiums === 1);
+  const rows = lb.view().records['0'].filter((r) => r.name === 'Farmer');
+  check('three seats leave one record row', rows.length === 1);
+  check('the record row keeps the best of the seats', rows[0].timeMs === GOOD);
+  check('the rival is unaffected', profiles.get(rival).races === 1 && profiles.get(rival).wins === 0);
+}
+
+console.log('one profile holding several seats, alone');
+{
+  const { profiles, lb } = fixture();
+  const farmer = driver(profiles, 'LoneFarmer');
+  const res = lb.recordRace({
+    mapId: 0, laps: 3,
+    entries: [1, 2, 3].map((pos) => ({
+      pid: farmer, name: 'LoneFarmer', pos, timeMs: GOOD + pos * 1000,
+      finished: true, retired: false, progressed: true,
+    })),
+  });
+  check('many seats held by one profile do not open standings', res.standings === false);
+  check('...and earn no races', profiles.get(farmer).races === 0);
+  check('...and earn no wins', profiles.get(farmer).wins === 0);
+}
+
+console.log('a parked profile does not open standings');
+{
+  const { profiles, lb } = fixture();
+  const farmer = driver(profiles, 'Racer1');
+  const puppet = driver(profiles, 'Puppet');
+  const res = lb.recordRace({
+    mapId: 0, laps: 3,
+    entries: [
+      { pid: farmer, name: 'Racer1', pos: 1, timeMs: GOOD, finished: true, retired: false, progressed: true },
+      { pid: puppet, name: 'Puppet', pos: 2, timeMs: null, finished: false, retired: false, progressed: false },
+    ],
+  });
+  check('a profile that never moved does not count for standings', res.standings === false);
+  check('the driver earns no race from a parked puppet', profiles.get(farmer).races === 0);
+  check('the driver earns no win from a parked puppet', profiles.get(farmer).wins === 0);
+  check('the parked puppet earns no race either', profiles.get(puppet).races === 0);
+  check('the run still sets a track record', res.records.includes(farmer));
+}
+
+console.log('two profiles that both raced');
+{
+  const { profiles, lb } = fixture();
+  const a = driver(profiles, 'Racer2');
+  const b = driver(profiles, 'Racer3');
+  const res = lb.recordRace({
+    mapId: 0, laps: 3,
+    entries: [
+      { pid: a, name: 'Racer2', pos: 1, timeMs: GOOD, finished: true, retired: false, progressed: true },
+      { pid: b, name: 'Racer3', pos: 2, timeMs: GOOD + 500, finished: true, retired: false, progressed: true },
+    ],
+  });
+  check('two profiles that both progressed count for standings', res.standings === true);
+  check('the winner gets a win', profiles.get(a).wins === 1);
+  check('the runner-up gets a race', profiles.get(b).races === 1);
+}
+
+console.log('a driver who raced then retired still counts toward the threshold');
+{
+  const { profiles, lb } = fixture();
+  const a = driver(profiles, 'Racer4');
+  const q = driver(profiles, 'Retiree');
+  const res = lb.recordRace({
+    mapId: 0, laps: 3,
+    entries: [
+      { pid: a, name: 'Racer4', pos: 1, timeMs: GOOD, finished: true, retired: false, progressed: true },
+      { pid: q, name: 'Retiree', pos: 2, timeMs: null, finished: true, retired: true, progressed: true },
+    ],
+  });
+  check('retiring after driving still opens standings', res.standings === true);
+  check('the finisher gets the win', profiles.get(a).wins === 1);
+  check('the retiree still gets a race', profiles.get(q).races === 1);
+  check('the retiree still gets no podium', profiles.get(q).podiums === 0);
+}
+
 console.log('retired driver');
 {
   const { profiles, lb } = fixture();

@@ -1,4 +1,5 @@
-/** Capacity test: 8 players allowed, 9th rejected. Usage: node test/capacity.js [url]
+/** Capacity test: 8 players allowed, 9th rejected, one profile gets one seat.
+ * Usage: node test/capacity.js [url]
  * Run with RTR_STORE_PATH pointed at a throwaway file so test drivers never
  * land on the real leaderboard.
  */
@@ -16,30 +17,48 @@ function connect(cookie) {
 }
 
 (async () => {
-  const host = await connect(await makeProfile(URL, 'HostPlayer'));
+  const hostCookie = await makeProfile(URL, 'HostPlayer');
+  const host = await connect(hostCookie);
+  // Every join rebroadcasts the lobby, so the last one we see is the live roster.
+  let lobby = null;
+  host.on('lobby', (l) => { lobby = l; });
   const code = await new Promise((res) => host.emit('createRoom', {}, (r) => res(r.code)));
   console.log('room', code);
 
+  // One profile, one seat. A second socket carrying the SAME cookie is how a
+  // single person would otherwise fill the grid and collect a set of standings
+  // per seat — no forged cookie and no patched client needed.
+  const twin = await connect(hostCookie);
+  const rTwin = await new Promise((res) => twin.emit('joinRoom', { code }, (r) => res(r)));
+  console.log(`same-cookie second seat rejected: ${!rTwin.ok} (${rTwin.error || 'no error'})`);
+
+  const others = [];
   let joined = 1;
   for (let i = 2; i <= 8; i++) {
     const s = await connect(await makeProfile(URL, `Player${i}`));
     const ok = await new Promise((res) => s.emit('joinRoom', { code }, (r) => res(r.ok)));
-    if (ok) joined++;
+    if (ok) { joined++; others.push(s); }
   }
   console.log(`players joined: ${joined} (expect 8)`);
+  // The join ack can beat the lobby broadcast to this socket; let it land.
+  await new Promise((r) => setTimeout(r, 300));
+  const hostKept = !!lobby && lobby.players.length === joined
+    && lobby.players.some((p) => p.id === host.id);
+  console.log(`host kept its seat after the refusal: ${hostKept}`);
 
   const ninth = await connect(await makeProfile(URL, 'Player9'));
   const r9 = await new Promise((res) => ninth.emit('joinRoom', { code }, (r) => res(r)));
   console.log(`9th join rejected: ${!r9.ok} (${r9.error || 'no error'})`);
 
-  sockets.slice(1, 8).forEach((s) => s.emit('toggleReady'));
+  others.forEach((s) => s.emit('toggleReady'));
   await new Promise((r) => setTimeout(r, 300));
   host.emit('startRace');
   await new Promise((r) => setTimeout(r, 500));
   const rMid = await new Promise((res) => ninth.emit('joinRoom', { code }, (r) => res(r)));
   console.log(`mid-race join rejected: ${!rMid.ok} (${rMid.error || 'no error'})`);
 
-  const pass = joined === 8 && !r9.ok && !rMid.ok;
+  const pass = joined === 8 && !r9.ok && !rMid.ok && hostKept
+    && !rTwin.ok && rTwin.error === 'You are already in this room in another tab';
   console.log(pass ? 'PASS' : 'FAIL');
   sockets.forEach((s) => s.disconnect());
   process.exit(pass ? 0 : 1);

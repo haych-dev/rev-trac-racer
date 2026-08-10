@@ -4,8 +4,10 @@
  * Two deliberate asymmetries, both from the spec:
  *   - Track records count solo runs. A fast time is fast whether or not
  *     anyone else was on track.
- *   - Standings need 2+ distinct profiles, which is what stops someone
- *     farming wins in an empty room.
+ *   - Standings need 2+ distinct profiles that actually RACED, and each profile
+ *     is awarded once no matter how many seats it held. That stops an empty
+ *     room, a second cookie parked on the grid, and one cookie in many seats.
+ *     It does not stop someone genuinely driving two cars at once (§7).
  */
 const RTMaps = require('./public/maps.js');
 const { MAX_RACES } = require('./store.js');
@@ -46,13 +48,36 @@ function createLeaderboard(store, profiles) {
     // A pid with no profile behind it cannot earn anything, and must not count
     // toward the 2-driver threshold either.
     const valid = (entries || []).filter((e) => e && profiles.get(e.pid));
-    const distinct = new Set(valid.map((e) => e.pid));
+
+    // One profile earns one set of stats, however many seats it held. Awards go
+    // to its BEST finish: pos is time order for finishers, so best-pos is also
+    // best-time and track records are unaffected. `progressed` is OR-ed across
+    // the seats — a profile that drove anywhere raced.
+    const byPid = new Map();
+    for (const e of valid) {
+      // Absent means "assume it raced": only the server sets this field, and an
+      // older caller that omits it must keep counting as it always did.
+      const progressed = e.progressed !== false;
+      const prev = byPid.get(e.pid);
+      if (!prev) {
+        byPid.set(e.pid, Object.assign({}, e, { progressed }));
+      } else if (e.pos < prev.pos) {
+        byPid.set(e.pid, Object.assign({}, e, { progressed: prev.progressed || progressed }));
+      } else {
+        prev.progressed = prev.progressed || progressed;
+      }
+    }
+    const awards = [...byPid.values()];
+
+    // Only profiles that actually drove open the standings gate. A parked
+    // second profile must not turn a solo run into a competitive race.
+    const distinct = new Set(awards.filter((e) => e.progressed).map((e) => e.pid));
     const forStandings = distinct.size >= 2;
     const canRecord = laps === CANON_LAPS;
     const floor = minPlausibleMs(mapId, laps);
     const improved = [];
 
-    for (const e of valid) {
+    for (const e of awards) {
       const p = profiles.get(e.pid);
       const trueFinish = !!e.finished && !e.retired;
 
