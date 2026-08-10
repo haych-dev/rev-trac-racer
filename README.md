@@ -142,7 +142,7 @@ RTR_STORE_PATH=/tmp/rtr-test.json PORT=4100 LAPS=1 node server.js
 
 ```bash
 node test/bots.js http://localhost:4100 8 0   # full race with 8 bot drivers
-node test/capacity.js http://localhost:4100   # 8-player cap, mid-race join
+node test/capacity.js http://localhost:4100   # 8-player cap, mid-race join, one seat per profile
 node test/exit.js http://localhost:4100       # mid-race exit
 ```
 

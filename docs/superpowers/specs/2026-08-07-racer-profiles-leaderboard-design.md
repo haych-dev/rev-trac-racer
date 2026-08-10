@@ -27,7 +27,7 @@ physics. The real exposure is elsewhere:
 | Vector | Today | Addressed by |
 |---|---|---|
 | Name spoofing | `name` arrives from the client at `server.js:530`/`544` with no ownership | Owned profiles (§2) |
-| Solo/collusion farming | Win an empty room repeatedly; nothing notices | 2+ distinct profiles for standings (§4) |
+| Solo/collusion farming | Win an empty room repeatedly; nothing notices | 2+ distinct profiles that raced, one award each (§4) |
 | Scripted bots | `test/bots.js` proves a script can drive a perfect line using only legal inputs | **Out of scope** (§7) |
 | No rate limits | `input`, `useItem`, `createRoom` unbounded | Token buckets (§6) |
 | `/debug/rooms` | Publicly leaks every room, code, socket ID and name (`server.js:9`) | `RTR_DEBUG` gate (§6) |
@@ -225,12 +225,40 @@ Hooks into `checkRaceEnd` once `results` is computed.
   exists for testing, and a 1-lap race would otherwise set a permanent
   unbeatable record.
 
-**Standings.** Only when the race had **2 or more distinct profile IDs**. This
-is what stops empty-room farming.
+**Standings.** Only when the race had **2 or more distinct profiles that
+actually raced**, and **each profile is awarded at most once**, however many
+seats it held.
 
+- "Actually raced" means the car crossed at least one arc-length sector
+  (`cpCount > 0` in the simulation). `checkRaceEnd` passes this as `progressed`
+  on each entry; a car parked on the grid is `false`. Crossing a sector and then
+  retiring still counts — retiring is quitting, not farming — but a player who
+  leaves before crossing one does not open the gate.
+- Seats are collapsed per profile before anything is awarded, keeping the best
+  (lowest) `pos`. For finishers `pos` is time order, so best-pos is also
+  best-time and track records are unchanged.
 - `races` increments for everyone present at the finish, retired included.
 - `wins` increments for position 1, `podiums` for positions 1–3, both only for
   genuine finishers (`finished && !retired`).
+
+Belt and braces: `joinRoom` also refuses a second seat to a profile already in
+that room (`You are already in this room in another tab`), so one cookie cannot
+occupy multiple seats in the first place. Rejoining from the *same* socket is
+still fine. `createRoom` needs no equivalent check — a fresh room holds only its
+creator.
+
+**What this actually guarantees.** Standings need two people's worth of *driving*,
+not two cookies. It closes: the empty room; one cookie filling several seats
+(one seat, and one award, per profile); and a second profile minted from
+`/api/profile/me` and parked on the grid to unlock the gate.
+
+**What it does not.** Profile IDs are cheap — minting is rate limited, not
+scarce — so someone determined can still mint a second profile and *genuinely
+drive both cars* to a rigged result. That is the same class of problem as bot
+detection (§7) and is deliberately out of scope: catching it means judging how a
+car was driven, and any threshold there false-positives on real players. The
+rule raises the cost of farming from "open a second tab" to "drive two cars at
+once, every race".
 
 ## 5. Lobby controls
 
@@ -279,9 +307,9 @@ team creating profiles together would trip a 10/min claim limit.
 
 The per-IP numbers are therefore DoS backstops sized well above realistic use,
 not security boundaries. The actual integrity guarantees come from cookie-signed
-profile ownership (§2) and the 2+ distinct profile rule (§4), neither of which
-depends on IP at all. Per-socket limits stay tight because one socket is one
-player.
+profile ownership (§2) and the standings rule of §4 (2+ distinct profiles that
+actually raced, one award per profile), neither of which depends on IP at all.
+Per-socket limits stay tight because one socket is one player.
 
 ## 7. Explicitly out of scope: bot detection
 
@@ -318,6 +346,10 @@ New tests, each pinning a claim made above:
 - a time under the plausibility floor is rejected
 - `LAPS=1` writes no record
 - a retired driver gains a race but no win or podium
+- one profile holding several seats earns one race, one win and one podium, and
+  one record row — not one per seat
+- a profile that never moved (`progressed: false`) does not open the standings
+  gate; two that both moved do; a driver who moved and then retired still counts
 
 **`test/security.js`**
 - a client-supplied `name` on `createRoom`/`joinRoom` is ignored
@@ -327,6 +359,10 @@ New tests, each pinning a claim made above:
 - an `input` flood is dropped and the socket survives
 - `/debug/rooms` 404s without `RTR_DEBUG=1`
 - `GET /api/leaderboard` returns names but never profile IDs
+
+**`test/capacity.js`**
+- a second socket carrying the same cookie is refused a seat in a room its
+  profile already occupies, and the first socket keeps its place
 
 `test/validate-maps.js` is untouched and must keep passing.
 
