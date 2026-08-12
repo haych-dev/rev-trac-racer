@@ -170,8 +170,8 @@ The pure half: palette, seeded PRNG, and the three functions that turn a map int
   - `PALETTE` — `{ grass, grassAlt, sand, asphalt, kerbRed, kerbWhite, centre }`, all CSS colour strings.
   - `runoffFor(map) -> number` — sand half-width in px beyond the kerb; `0` when there is no room.
   - `furnitureFor(map) -> Array<{ kind: 'board'|'tyres', x: number, y: number, u: number, angle?: number }>` — `angle` present on `board` only, in radians. `u` is the arc fraction of the sample the item was placed from, carried so the start-line exclusion is directly assertable rather than re-derived by projecting the offset point back onto the centreline (which can disagree by a hair and make the test flaky).
-  - `sceneryFor(map) -> { stands: Array<{x,y,w,h}>, cars: Array<{x,y,angle,color}>, trees: Array<{x,y,r}> }` — `stands` `x,y` are the rectangle **centre**, not a corner.
-  - Constants used by Task 3's painting and by the tests: `KERB`, `KERB_DASH`, `RUNOFF_MAX`, `RUNOFF_MIN`, `WORLD_W`, `WORLD_H`, `WORLD_INSET`, `FURNITURE_GAP`, `FURNITURE_TOL`, `START_U_LO`, `START_U_HI`.
+  - `sceneryFor(map) -> { stands: Array<{x,y,w,h}>, cars: Array<{x,y,angle,color}>, trees: Array<{x,y,r}> }` — `stands` `x,y` are the rectangle **centre**, not a corner. Every map yields 1-2 stands; they are found by a grid scan, not fixed positions.
+  - Constants used by Task 3's painting and by the tests: `KERB`, `KERB_DASH`, `RUNOFF_MAX`, `RUNOFF_MIN`, `WORLD_W`, `WORLD_H`, `WORLD_INSET`, `FURNITURE_GAP`, `FURNITURE_TOL`, `START_U_LO`, `START_U_HI`, `STAND_W`, `STAND_H`, `STAND_CLEAR`, `CAR_FLOOR`, `TREE_FLOOR`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -239,9 +239,23 @@ for (const map of RTMaps.MAPS) {
   const far = (o, min) => RTMaps.closest(map.path, o.x, o.y).dist > min;
   const all = [...sc.stands, ...sc.cars, ...sc.trees];
   check(`${map.name}: scenery avoids the logo plate`, all.every(outsideLogo));
-  check(`${map.name}: stands clear their distance floor`, sc.stands.every((o) => far(o, 190)));
-  check(`${map.name}: cars clear their distance floor`, sc.cars.every((o) => far(o, 175)));
-  check(`${map.name}: trees clear their distance floor`, sc.trees.every((o) => far(o, 150)));
+  // Every track must get a grandstand. Fixed corner positions left five of eight
+  // with none, so this assertion is what proves the grid scan actually adapts.
+  check(`${map.name}: gets one or two grandstands`,
+    sc.stands.length >= 1 && sc.stands.length <= 2);
+  const need = map.halfWidth + S.runoffFor(map) + S.STAND_CLEAR;
+  check(`${map.name}: every stand clears the corridor at all four corners`,
+    sc.stands.every((s) => [
+      [s.x, s.y],
+      [s.x - s.w / 2, s.y - s.h / 2], [s.x + s.w / 2, s.y - s.h / 2],
+      [s.x - s.w / 2, s.y + s.h / 2], [s.x + s.w / 2, s.y + s.h / 2],
+    ].every(([px, py]) => RTMaps.closest(map.path, px, py).dist > need)));
+  check(`${map.name}: every stand is fully inside the world`,
+    sc.stands.every((s) =>
+      s.x - s.w / 2 >= S.WORLD_INSET && s.x + s.w / 2 <= S.WORLD_W - S.WORLD_INSET &&
+      s.y - s.h / 2 >= S.WORLD_INSET && s.y + s.h / 2 <= S.WORLD_H - S.WORLD_INSET));
+  check(`${map.name}: cars clear their distance floor`, sc.cars.every((o) => far(o, S.CAR_FLOOR)));
+  check(`${map.name}: trees clear their distance floor`, sc.trees.every((o) => far(o, S.TREE_FLOOR)));
   check(`${map.name}: some trees are placed`, sc.trees.length > 0);
   check(`${map.name}: every car has a colour`, sc.cars.every((o) => typeof o.color === 'string'));
   // Nothing may sit on a grandstand; a tree on a roof reads as a rendering bug.
@@ -311,6 +325,10 @@ Create `public/scenery.js`:
   const START_U_LO = 0.02, START_U_HI = 0.985;  // kept clear for the start line
   const LOGO_PAD = 30;                    // exclusion margin around the wordmark
   const LOGO_ASPECT = 0.262;              // logo height / width, as game.js uses
+  const STAND_W = 120, STAND_H = 210;     // grandstand footprint
+  const STAND_CLEAR = 30;                 // stand must clear the corridor by this
+  const CAR_FLOOR = 135;                  // paddock cars stay this far off the loop
+  const TREE_FLOOR = 150;
 
   const PALETTE = {
     grass: '#7fb442', grassAlt: '#6da438', sand: '#e6d9a8', asphalt: '#494d54',
@@ -384,9 +402,34 @@ Create `public/scenery.js`:
 
     // Stands first, so cars and trees can be kept off them. Without this a tree
     // lands on a grandstand roof and reads as a rendering bug.
+    //
+    // Scanned on a grid rather than dropped at fixed corners. Fixed corners were
+    // tried and left five of the eight tracks with no grandstand at all: the
+    // circuits that use the full world pass within a stand's width of every
+    // corner. A stand is accepted only where its centre AND all four corners
+    // clear the decorated corridor, so some land in the infield — which is where
+    // real circuits put them.
+    const need = map.halfWidth + runoffFor(map) + STAND_CLEAR;
+    function standFits(x, y) {
+      if (x - STAND_W / 2 < WORLD_INSET || x + STAND_W / 2 > WORLD_W - WORLD_INSET) return false;
+      if (y - STAND_H / 2 < WORLD_INSET || y + STAND_H / 2 > WORLD_H - WORLD_INSET) return false;
+      const corners = [
+        [x, y],
+        [x - STAND_W / 2, y - STAND_H / 2], [x + STAND_W / 2, y - STAND_H / 2],
+        [x - STAND_W / 2, y + STAND_H / 2], [x + STAND_W / 2, y + STAND_H / 2],
+      ];
+      return corners.every(function (c) { return clear(c[0], c[1], need); });
+    }
     const stands = [];
-    for (const [x, y] of [[105, 180], [WORLD_W - 105, WORLD_H - 180]]) {
-      if (clear(x, y, 190)) stands.push({ x, y, w: 150, h: 300 });
+    for (let y = WORLD_INSET + STAND_H / 2; y <= WORLD_H - WORLD_INSET - STAND_H / 2 && stands.length < 2; y += 70) {
+      for (let x = WORLD_INSET + STAND_W / 2; x <= WORLD_W - WORLD_INSET - STAND_W / 2 && stands.length < 2; x += 70) {
+        if (!standFits(x, y)) continue;
+        // keep the two stands apart so they do not read as one long building
+        if (stands.some(function (s) {
+          return Math.abs(s.x - x) < STAND_W + 40 && Math.abs(s.y - y) < STAND_H + 40;
+        })) continue;
+        stands.push({ x, y, w: STAND_W, h: STAND_H });
+      }
     }
     function onStand(x, y, pad) {
       return stands.some(function (s) {
@@ -401,7 +444,7 @@ Create `public/scenery.js`:
       const y = 40 + rand() * (WORLD_H - 80);
       const angle = rand() < 0.5 ? 0 : Math.PI / 2;
       const color = CAR_COLORS[Math.floor(rand() * CAR_COLORS.length)];
-      if (clear(x, y, 175) && !onStand(x, y, 20)) cars.push({ x, y, angle, color });
+      if (clear(x, y, CAR_FLOOR) && !onStand(x, y, 20)) cars.push({ x, y, angle, color });
     }
 
     const trees = [];
@@ -409,7 +452,7 @@ Create `public/scenery.js`:
       const x = WORLD_INSET + rand() * (WORLD_W - 2 * WORLD_INSET);
       const y = WORLD_INSET + rand() * (WORLD_H - 2 * WORLD_INSET);
       const r = 11 + rand() * 9;
-      if (clear(x, y, 150) && !onStand(x, y, r)) trees.push({ x, y, r });
+      if (clear(x, y, TREE_FLOOR) && !onStand(x, y, r)) trees.push({ x, y, r });
     }
 
     return { stands, cars, trees };
@@ -420,6 +463,7 @@ Create `public/scenery.js`:
     KERB, KERB_DASH, RUNOFF_MAX, RUNOFF_MIN,
     WORLD_W, WORLD_H, WORLD_INSET, FURNITURE_GAP, FURNITURE_TOL,
     START_U_LO, START_U_HI,
+    STAND_W, STAND_H, STAND_CLEAR, CAR_FLOOR, TREE_FLOOR,
   };
 });
 ```
