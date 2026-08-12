@@ -178,8 +178,15 @@ Net result is fewer per-frame stroke operations than today, with far more on scr
 
 Two cars are green — `Release Rocket` `#57cc3f` and `Patch Panther` `#9ef01a` — and sit close
 to `PALETTE.grass`. They spend nearly all their time on dark asphalt, so this only bites when
-a car runs wide, but the insurance is cheap: `drawCarBody` gains a 1.5px
-`rgba(0,0,0,0.45)` outline. It helps on grass and also sharpens every car against asphalt.
+a car runs wide.
+
+**No code change is planned here.** `drawCarBody` already sets
+`strokeStyle = 'rgba(0,0,0,0.45)'` with `lineWidth = 2` and strokes every main body shape
+(`public/game.js:93`, 15 `stroke()` calls), so the mitigation is already in place — an earlier
+draft of this spec wrongly proposed adding it. The remaining work is verification: park a
+`Release Rocket` and a `Patch Panther` on the new grass in the browser and confirm they read.
+Only if they do not does this become a change, and then the minimal one is raising
+`lineWidth` or darkening the existing stroke — not new geometry.
 
 ## 9. Testing
 
