@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node test/store.js && node test/leaderboard.js && node test/validate-maps.js"
+    "test": "node test/store.js && node test/leaderboard.js && node test/scenery.js && node test/validate-maps.js"
   },
   "dependencies": {
     "express": "^4.19.2",
