@@ -108,6 +108,26 @@
     return best;
   }
 
+  // Minimum distance between two points on the loop that are far apart along the
+  // arc but close in space. Neighbouring parts of the same circuit bound how wide
+  // any trackside decoration can be before the two corridors merge, so this is
+  // the number every decoration width is derived from.
+  // Returns the tightest pair's indices too, for diagnostics.
+  function selfClearance(path, halfWidth) {
+    const { pts, cum, total, n } = path;
+    const arcExclusion = 3 * halfWidth;
+    let best = { dist: Infinity, i: 0, j: 0 };
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const fwd = cum[j] - cum[i];
+        if (Math.min(fwd, total - fwd) <= arcExclusion) continue;
+        const d = Math.hypot(pts[i][0] - pts[j][0], pts[i][1] - pts[j][1]);
+        if (d < best.dist) best = { dist: d, i, j };
+      }
+    }
+    return best;
+  }
+
   const defs = [
     {
       id: 0, name: 'Go-Live GP', halfWidth: 90,
@@ -223,8 +243,8 @@
       const cy = d.pts.reduce((s, p) => s + p[1], 0) / d.pts.length;
       logo = { x: cx, y: cy, w: 440 };
     }
-    return { ...d, path, logo };
+    return { ...d, path, logo, clearance: selfClearance(path, d.halfWidth).dist };
   });
 
-  return { MAPS, pointAt, closest };
+  return { MAPS, pointAt, closest, selfClearance };
 });
