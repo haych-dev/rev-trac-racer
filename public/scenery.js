@@ -108,9 +108,10 @@
     // Scanned on a grid rather than dropped at fixed corners. Fixed corners were
     // tried and left five of the eight tracks with no grandstand at all: the
     // circuits that use the full world pass within a stand's width of every
-    // corner. A stand is accepted only where its centre AND all four corners
-    // clear the decorated corridor, so some land in the infield — which is where
-    // real circuits put them.
+    // corner. A stand is accepted only where its centre, all four corners, AND
+    // all four edge midpoints clear the decorated corridor — a track approaching
+    // an edge dead-on can pass at the corners while still crossing the edge
+    // itself — so some land in the infield — which is where real circuits put them.
     const need = map.halfWidth + runoffFor(map) + STAND_CLEAR;
     function standFits(x, y) {
       if (x - STAND_W / 2 < WORLD_INSET || x + STAND_W / 2 > WORLD_W - WORLD_INSET) return false;
@@ -119,6 +120,8 @@
         [x, y],
         [x - STAND_W / 2, y - STAND_H / 2], [x + STAND_W / 2, y - STAND_H / 2],
         [x - STAND_W / 2, y + STAND_H / 2], [x + STAND_W / 2, y + STAND_H / 2],
+        [x, y - STAND_H / 2], [x, y + STAND_H / 2],
+        [x - STAND_W / 2, y], [x + STAND_W / 2, y],
       ];
       return corners.every(function (c) { return clear(c[0], c[1], need); });
     }
