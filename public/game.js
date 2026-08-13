@@ -60,6 +60,10 @@
 
   // The real Rev-Trac logo, drawn on each track's infield.
   const logoImg = new Image();
+  // Drop any layer painted before the wordmark arrived. The handler cannot fire
+  // until module evaluation finishes, so referencing trackLayer (declared further
+  // down) is safe.
+  logoImg.onload = function () { trackLayer = null; };
   logoImg.src = 'revtrac-logo.svg';
 
   // ---- Car body illustrations ----
@@ -595,87 +599,32 @@
   fitCanvas();
 
   // ---- Rendering ----
-  const trackPathCache = new Map(); // mapId -> Path2D
+  // The track is entirely static, so it is painted once into an offscreen canvas
+  // and blitted each frame. This replaces four full-path strokes per frame, so it
+  // is cheaper than the old renderer despite drawing far more.
+  // Only the current map is cached: one 1600x1000 layer is ~6MB, and caching all
+  // eight would be ~51MB for no benefit — you race one track at a time.
+  let trackLayer = null;    // { mapId, canvas }
 
-  function trackPath2D(map) {
-    let p = trackPathCache.get(map.id);
-    if (!p) {
-      p = new Path2D();
-      map.pts.forEach(([x, y], i) => (i === 0 ? p.moveTo(x, y) : p.lineTo(x, y)));
-      p.closePath();
-      trackPathCache.set(map.id, p);
-    }
-    return p;
+  function trackLayerFor(map) {
+    if (trackLayer && trackLayer.mapId === map.id) return trackLayer.canvas;
+    const cv = document.createElement('canvas');
+    cv.width = WORLD_W;
+    cv.height = WORLD_H;
+    RTScenery.paintTrack(cv.getContext('2d'), map, logoImg);
+    trackLayer = { mapId: map.id, canvas: cv };
+    return cv;
   }
 
   function drawTrack(map) {
-    // grass
-    ctx.fillStyle = '#14501f';
-    ctx.fillRect(0, 0, WORLD_W, WORLD_H);
-    ctx.fillStyle = 'rgba(255,255,255,0.02)';
-    for (let y = 0; y < WORLD_H; y += 80) ctx.fillRect(0, y, WORLD_W, 40);
-
-    const path = trackPath2D(map);
-    const hw = map.halfWidth;
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-
-    // kerbs (red/white dashed edge)
-    ctx.lineWidth = hw * 2 + 16;
-    ctx.strokeStyle = '#cf3540';
-    ctx.stroke(path);
-    ctx.setLineDash([26, 26]);
-    ctx.strokeStyle = '#f1f3f5';
-    ctx.stroke(path);
-    ctx.setLineDash([]);
-
-    // asphalt
-    ctx.lineWidth = hw * 2;
-    ctx.strokeStyle = '#3a3f4a';
-    ctx.stroke(path);
-
-    // centerline dashes
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-    ctx.setLineDash([30, 34]);
-    ctx.stroke(path);
-    ctx.setLineDash([]);
-
-    // start / finish line: checkered strip perpendicular to the track at u=0
-    const st = RTMaps.pointAt(map.path, 0);
-    const sq = 15;
-    ctx.save();
-    ctx.translate(st.x, st.y);
-    ctx.rotate(Math.atan2(st.ty, st.tx));
-    for (let row = 0; row < Math.ceil((hw * 2) / sq); row++) {
-      for (let col = 0; col < 2; col++) {
-        ctx.fillStyle = (row + col) % 2 === 0 ? '#fff' : '#111';
-        ctx.fillRect((col - 2) * sq, -hw + row * sq, sq, Math.min(sq, hw * 2 - row * sq));
-      }
+    // logoImg loads asynchronously. Caching before it lands would bake a missing
+    // wordmark in for the life of the page, so paint straight to the screen until
+    // it is ready; logoImg.onload drops any layer built without it.
+    if (!(logoImg.complete && logoImg.naturalWidth)) {
+      RTScenery.paintTrack(ctx, map, logoImg);
+      return;
     }
-    ctx.restore();
-
-    // Rev-Trac logo on the infield
-    const lg = map.logo;
-    if (logoImg.complete && logoImg.naturalWidth) {
-      const lw = lg.w;
-      const lh = lw * (logoImg.naturalHeight / logoImg.naturalWidth);
-      // white plate behind the logo so the navy wordmark reads on grass
-      ctx.save();
-      ctx.globalAlpha = 0.85;
-      ctx.fillStyle = '#f4f5f7';
-      roundRect(lg.x - lw / 2 - 18, lg.y - lh / 2 - 14, lw + 36, lh + 28, 14);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-      ctx.drawImage(logoImg, lg.x - lw / 2, lg.y - lh / 2, lw, lh);
-      ctx.restore();
-    }
-    ctx.font = '800 26px "Segoe UI", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = 'rgba(255,255,255,0.5)';
-    const lgH = lg.w * 0.262;
-    ctx.fillText(map.name.toUpperCase(), lg.x, lg.y + lgH / 2 + 46);
+    ctx.drawImage(trackLayerFor(map), 0, 0);
   }
 
   function drawPads(pads) {

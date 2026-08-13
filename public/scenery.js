@@ -163,8 +163,227 @@
     return { stands, cars, trees };
   }
 
+  // ---- painting -----------------------------------------------------------
+  // Canvas from here down. node never calls into this half, so Path2D and
+  // friends being browser-only is fine; test/scenery.js covers the pure half.
+
+  const pathCache = new Map();            // map id -> Path2D
+
+  function trackPath(map) {
+    let p = pathCache.get(map.id);
+    if (!p) {
+      p = new Path2D();
+      map.pts.forEach(function (pt, i) {
+        if (i === 0) p.moveTo(pt[0], pt[1]); else p.lineTo(pt[0], pt[1]);
+      });
+      p.closePath();
+      pathCache.set(map.id, p);
+    }
+    return p;
+  }
+
+  function paintGrass(ctx, seed) {
+    ctx.fillStyle = PALETTE.grass;
+    ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+    const rand = rng(seed);
+    ctx.fillStyle = PALETTE.grassAlt;
+    for (let i = 0; i < 40; i++) {
+      const x = rand() * WORLD_W, y = rand() * WORLD_H, r = 40 + rand() * 90;
+      ctx.beginPath();
+      ctx.ellipse(x, y, r, r * 0.6, rand() * Math.PI, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.03)';
+    for (let y = 0; y < WORLD_H; y += 80) ctx.fillRect(0, y, WORLD_W, 40);
+  }
+
+  function paintSurface(ctx, map, runoff) {
+    const path = trackPath(map), hw = map.halfWidth;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+
+    if (runoff > 0) {
+      ctx.lineWidth = hw * 2 + runoff * 2;
+      ctx.strokeStyle = PALETTE.sand;
+      ctx.stroke(path);
+    }
+
+    ctx.lineWidth = hw * 2 + KERB * 2;
+    ctx.strokeStyle = PALETTE.kerbRed;
+    ctx.stroke(path);
+    // Butt caps, not round. A round cap extends every dash by half the line
+    // width at each end; at this width (~200px) a 22px dash grows by ~100px in
+    // both directions and the dashes fuse into a solid white band. That was the
+    // old renderer's bug -- the kerb read as a plain white edge, never red/white.
+    ctx.lineCap = 'butt';
+    ctx.setLineDash(KERB_DASH);
+    ctx.strokeStyle = PALETTE.kerbWhite;
+    ctx.stroke(path);
+    ctx.setLineDash([]);
+    ctx.lineCap = 'round';
+
+    ctx.lineWidth = hw * 2;
+    ctx.strokeStyle = PALETTE.asphalt;
+    ctx.stroke(path);
+
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = PALETTE.centre;
+    ctx.setLineDash([30, 34]);
+    ctx.stroke(path);
+    ctx.setLineDash([]);
+  }
+
+  function paintStartLine(ctx, map) {
+    const hw = map.halfWidth, st = RTMaps.pointAt(map.path, 0), sq = 15;
+    ctx.save();
+    ctx.translate(st.x, st.y);
+    ctx.rotate(Math.atan2(st.ty, st.tx));
+    for (let row = 0; row < Math.ceil((hw * 2) / sq); row++) {
+      for (let col = 0; col < 2; col++) {
+        ctx.fillStyle = (row + col) % 2 === 0 ? '#fff' : '#111';
+        ctx.fillRect((col - 2) * sq, -hw + row * sq, sq, Math.min(sq, hw * 2 - row * sq));
+      }
+    }
+    ctx.restore();
+  }
+
+  function paintBoard(ctx, x, y, angle) {
+    const w = 46, h = 13;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    ctx.fillStyle = PALETTE.kerbWhite;
+    ctx.fillRect(-w / 2, -h / 2, w, h);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(-w / 2, -h / 2, w, h);
+    ctx.clip();
+    ctx.strokeStyle = PALETTE.kerbRed;
+    ctx.lineWidth = 7;
+    for (let i = -h; i < w + h; i += 13) {
+      ctx.beginPath();
+      ctx.moveTo(-w / 2 + i, -h / 2 - 2);
+      ctx.lineTo(-w / 2 + i - h - 4, h / 2 + 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(-w / 2, -h / 2, w, h);
+    ctx.restore();
+  }
+
+  function paintTyres(ctx, x, y) {
+    const offsets = [[0, 0], [13, -6], [-12, -7], [1, -14]];
+    for (const off of offsets) {
+      ctx.beginPath();
+      ctx.arc(x + off[0], y + off[1], 8.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#2b2f35';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(x + off[0], y + off[1], 3.6, 0, Math.PI * 2);
+      ctx.fillStyle = '#8b9099';
+      ctx.fill();
+    }
+  }
+
+  function paintScenery(ctx, sc) {
+    for (const s of sc.stands) {
+      const bx = s.x - s.w / 2, by = s.y - s.h / 2;
+      ctx.fillStyle = '#5b6272';
+      ctx.fillRect(bx, by, s.w, s.h);
+      ctx.fillStyle = '#d8dde6';
+      const rows = 5, gap = 10, inner = (s.h - 32) / rows;
+      for (let i = 0; i < rows; i++) {
+        ctx.fillRect(bx + 14, by + 16 + i * inner, s.w - 28, inner - gap);
+      }
+    }
+    for (const c of sc.cars) {
+      ctx.save();
+      ctx.translate(c.x, c.y);
+      ctx.rotate(c.angle);
+      ctx.fillStyle = c.color;
+      ctx.fillRect(-16, -9, 32, 18);
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fillRect(-6, -9, 11, 18);
+      ctx.restore();
+    }
+    for (const t of sc.trees) {
+      ctx.beginPath();
+      ctx.arc(t.x + 2, t.y + 3, t.r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, t.r, 0, Math.PI * 2);
+      ctx.fillStyle = '#2f6b2a';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(t.x - t.r * 0.28, t.y - t.r * 0.28, t.r * 0.55, 0, Math.PI * 2);
+      ctx.fillStyle = '#3d8534';
+      ctx.fill();
+    }
+  }
+
+  // game.js has its own roundRect, but it closes over that module's ctx and is
+  // not reachable from here. One local helper beats inlining arcTo at the sites.
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function paintLogo(ctx, map, logoImg) {
+    const lg = map.logo;
+    if (logoImg && logoImg.complete && logoImg.naturalWidth) {
+      const lw = lg.w;
+      const lh = lw * (logoImg.naturalHeight / logoImg.naturalWidth);
+      ctx.save();
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = '#f4f5f7';
+      roundRect(ctx, lg.x - lw / 2 - 18, lg.y - lh / 2 - 14, lw + 36, lh + 28, 14);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.drawImage(logoImg, lg.x - lw / 2, lg.y - lh / 2, lw, lh);
+      ctx.restore();
+    }
+    ctx.font = '800 26px "Segoe UI", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.fillText(map.name.toUpperCase(), lg.x, lg.y + (lg.w * LOGO_ASPECT) / 2 + 46);
+  }
+
+  // The complete static layer, in world coordinates. Scenery goes down before
+  // furniture so boards read on top of trees, and the wordmark goes last so
+  // nothing can cover it.
+  function paintTrack(ctx, map, logoImg) {
+    paintGrass(ctx, map.id + 1);
+    paintSurface(ctx, map, runoffFor(map));
+    paintStartLine(ctx, map);
+    paintScenery(ctx, sceneryFor(map));
+    for (const f of furnitureFor(map)) {
+      if (f.kind === 'board') paintBoard(ctx, f.x, f.y, f.angle);
+      else paintTyres(ctx, f.x, f.y);
+    }
+    paintLogo(ctx, map, logoImg);
+  }
+
+  // Lobby cards: palette and surface only. At card size a barrier board is 2-3px
+  // and reads as noise, so furniture and scenery are deliberately omitted.
+  function paintPreview(ctx, map) {
+    ctx.fillStyle = PALETTE.grass;
+    ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+    paintSurface(ctx, map, runoffFor(map));
+    paintStartLine(ctx, map);
+  }
+
   return {
     PALETTE, runoffFor, furnitureFor, sceneryFor,
+    paintTrack, paintPreview,
     KERB, KERB_DASH, RUNOFF_MAX, RUNOFF_MIN,
     WORLD_W, WORLD_H, WORLD_INSET, FURNITURE_GAP, FURNITURE_TOL,
     START_U_LO, START_U_HI,
