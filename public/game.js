@@ -60,10 +60,15 @@
 
   // The real Rev-Trac logo, drawn on each track's infield.
   const logoImg = new Image();
-  // Drop any layer painted before the wordmark arrived. The handler cannot fire
-  // until module evaluation finishes, so referencing trackLayer (declared further
-  // down) is safe.
-  logoImg.onload = function () { trackLayer = null; };
+  // complete becomes true once loading finishes -- including on failure -- while
+  // naturalWidth stays 0, so complete/naturalWidth alone can't tell "still
+  // loading" apart from "failed to load". logoSettled tracks "done waiting"
+  // (loaded OR failed) so a 404'd logo doesn't permanently defeat the cache.
+  // The handlers cannot fire until module evaluation finishes, so referencing
+  // trackLayer/logoSettled (declared further down) is safe.
+  let logoSettled = false;
+  logoImg.onload = function () { logoSettled = true; trackLayer = null; };
+  logoImg.onerror = function () { logoSettled = true; };
   logoImg.src = 'revtrac-logo.svg';
 
   // ---- Car body illustrations ----
@@ -619,8 +624,11 @@
   function drawTrack(map) {
     // logoImg loads asynchronously. Caching before it lands would bake a missing
     // wordmark in for the life of the page, so paint straight to the screen until
-    // it is ready; logoImg.onload drops any layer built without it.
-    if (!(logoImg.complete && logoImg.naturalWidth)) {
+    // it has either loaded or failed. logoImg.onload drops any layer built
+    // without it; a failed load settles here too (paintLogo already skips the
+    // wordmark when logoImg.naturalWidth is falsy), so the cache still engages
+    // instead of repainting the whole world every frame forever.
+    if (!logoSettled) {
       RTScenery.paintTrack(ctx, map, logoImg);
       return;
     }

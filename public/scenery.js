@@ -199,6 +199,10 @@
 
   function paintSurface(ctx, map, runoff) {
     const path = trackPath(map), hw = map.halfWidth;
+    // save/restore so lineJoin/lineCap/lineWidth/strokeStyle/dash don't escape
+    // into whatever paints next -- paintStartLine here, but also the caller's
+    // own context on the uncached (logo-not-yet-settled) path in game.js.
+    ctx.save();
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
 
@@ -231,6 +235,7 @@
     ctx.setLineDash([30, 34]);
     ctx.stroke(path);
     ctx.setLineDash([]);
+    ctx.restore();
   }
 
   function paintStartLine(ctx, map) {
@@ -350,11 +355,13 @@
       ctx.drawImage(logoImg, lg.x - lw / 2, lg.y - lh / 2, lw, lh);
       ctx.restore();
     }
+    ctx.save();
     ctx.font = '800 26px "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
     ctx.fillText(map.name.toUpperCase(), lg.x, lg.y + (lg.w * LOGO_ASPECT) / 2 + 46);
+    ctx.restore();
   }
 
   // The complete static layer, in world coordinates. Scenery goes down before
