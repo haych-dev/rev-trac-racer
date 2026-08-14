@@ -84,7 +84,7 @@ const allCars = [];
 
 for (const map of RTMaps.MAPS) {
   const sc = S.sceneryFor(map);
-  const lg = map.logo, lgH = lg.w * 0.262, pad = 30;
+  const lg = map.logo, lgH = lg.w * S.LOGO_ASPECT, pad = S.LOGO_PAD;
   const outsideLogo = (o) =>
     o.x <= lg.x - lg.w / 2 - pad || o.x >= lg.x + lg.w / 2 + pad ||
     o.y <= lg.y - lgH / 2 - pad || o.y >= lg.y + lgH / 2 + pad;
@@ -144,6 +144,13 @@ for (const map of RTMaps.MAPS) {
 // Different maps must not decorate identically, which a constant seed would cause.
 // Comparing only MAPS[0] vs MAPS[1] would miss a bug where maps 3-8 collide with
 // each other while 0 and 1 happen to differ, so compare every pair in the suite.
+//
+// Caveat: this cannot detect an RNG-seeding bug. Furniture coordinates derive from
+// each map's own path geometry, so the real eight maps produce different output
+// regardless of how the PRNG is seeded -- proven by hardcoding the seed and
+// watching the whole suite still pass. What this check does usefully guard
+// against is a map-array duplication or aliasing mistake (e.g. the same map
+// object appearing twice in RTMaps.MAPS).
 const furniturePerMap = RTMaps.MAPS.map((m) => JSON.stringify(S.furnitureFor(m)));
 let allPairsDiffer = true;
 for (let i = 0; i < furniturePerMap.length; i++) {
