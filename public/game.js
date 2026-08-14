@@ -42,6 +42,11 @@
   };
   function showScreen(name) {
     Object.entries(screens).forEach(([k, el]) => el.classList.toggle('active', k === name));
+    // Refresh here rather than at each call site: home is reachable from the
+    // lobby, the leaderboard and a race exit, and a stale standings panel after
+    // a race is exactly what someone would notice. Both are function
+    // declarations, so the forward reference is hoisted and safe.
+    if (name === 'home') refreshHomeStandings();
   }
 
   const canvas = $('game-canvas');
@@ -314,24 +319,38 @@
   // ---- How to play ----
   // Rendered into both the home screen and the lobby; keep it one template so
   // the two copies cannot drift apart.
+  // One template, rendered into both the home screen and the lobby, so the two
+  // copies cannot drift. The layout adapts instead of the markup: `.panel.wide`
+  // (the lobby) lays the two sections side by side, the narrower home panel
+  // stacks them. Powerup names sit above their descriptions rather than inline,
+  // so the list is scanned rather than read.
   const CONTROLS_HTML = `
-    <h3>Controls</h3>
-    <table class="controls-table">
-      <tr><td>Accelerate / brake</td><td><kbd>W</kbd><kbd>S</kbd> or <kbd>&uarr;</kbd><kbd>&darr;</kbd></td></tr>
-      <tr><td>Steer</td><td><kbd>A</kbd><kbd>D</kbd> or <kbd>&larr;</kbd><kbd>&rarr;</kbd></td></tr>
-      <tr><td>Use powerup</td><td><kbd>Space</kbd></td></tr>
-      <tr><td>Exit race</td><td><kbd>Esc</kbd></td></tr>
-    </table>
-    <h3>Powerups</h3>
-    <ul>
-      <li><b class="c-boost">&#10095;&#10095;&#10095; Chevron Boost</b> — hit warp speed for a couple of seconds</li>
-      <li><b class="c-cab">&#128203; CAB Meeting</b> — drop it behind you; whoever hits it gets stuck in review (spin out)</li>
-      <li><b class="c-lock">&#128274; Transport Lock</b> — freeze the car ahead of you</li>
-      <li><b class="c-shield">&#9889; Emergency Change</b> — shield that skips the red tape (5s immunity)</li>
-      <li><b class="c-oops">&#128165; OOPS!</b> — everyone ahead of you spins out</li>
-    </ul>
-    <p class="controls">Races are <b>3 laps</b>. Stay on the asphalt — grass is slow.
-       Drive through the <b>?</b> boxes to grab a powerup.</p>`;
+    <div class="howto-grid">
+      <section>
+        <h3>Controls</h3>
+        <table class="controls-table">
+          <tr><td>Accelerate / brake</td><td><kbd>W</kbd><kbd>S</kbd> or <kbd>&uarr;</kbd><kbd>&darr;</kbd></td></tr>
+          <tr><td>Steer</td><td><kbd>A</kbd><kbd>D</kbd> or <kbd>&larr;</kbd><kbd>&rarr;</kbd></td></tr>
+          <tr><td>Use powerup</td><td><kbd>Space</kbd></td></tr>
+          <tr><td>Exit race</td><td><kbd>Esc</kbd></td></tr>
+        </table>
+        <ul class="howto-facts">
+          <li><b>3 laps</b> to win</li>
+          <li>Grass is <b>slow</b></li>
+          <li><b>?</b> box = powerup</li>
+        </ul>
+      </section>
+      <section>
+        <h3>Powerups</h3>
+        <ul class="powerup-list">
+          <li><b class="c-boost">&#10095;&#10095;&#10095; Chevron Boost</b><span>Warp speed for a couple of seconds</span></li>
+          <li><b class="c-cab">&#128203; CAB Meeting</b><span>Drop it behind you — whoever hits it spins out</span></li>
+          <li><b class="c-lock">&#128274; Transport Lock</b><span>Freeze the car ahead of you</span></li>
+          <li><b class="c-shield">&#9889; Emergency Change</b><span>Shield that skips the red tape — 5s immunity</span></li>
+          <li><b class="c-oops">&#128165; OOPS!</b><span>Everyone ahead of you spins out</span></li>
+        </ul>
+      </section>
+    </div>`;
 
   function renderControls() {
     $('controls-home').innerHTML = CONTROLS_HTML;
@@ -515,6 +534,57 @@
     return typeof ms === 'number' ? `${(ms / 1000).toFixed(1)}s` : '—';
   }
 
+  // A driver's headline time is their best across every map they have raced.
+  function bestOf(s) {
+    const times = Object.values(s.bestByMap || {});
+    return times.length ? Math.min(...times) : null;
+  }
+
+  const NO_RACES = 'No races yet — a race needs 2+ drivers to count.';
+
+  // Shared by the full leaderboard screen and the compact panel on the home
+  // screen, so the two can never disagree about a driver's rank or figures.
+  // `compact` drops the races and podiums columns the narrow panel has no room
+  // for; every name goes through esc() in both forms.
+  function renderStandings(tbody, standings, compact, limit) {
+    tbody.innerHTML = '';
+    standings.slice(0, limit || standings.length).forEach((s, i) => {
+      const best = bestOf(s);
+      const tr = document.createElement('tr');
+      tr.innerHTML = compact
+        ? `<td>${i + 1}</td><td class="drv">${esc(s.name)}</td><td>${s.wins}</td>` +
+          `<td>${best === null ? '—' : fmtTime(best)}</td>`
+        : `<td>${i + 1}</td><td>${esc(s.name)}</td><td>${s.races}</td>` +
+          `<td>${s.wins}</td><td>${s.podiums}</td>` +
+          `<td>${best === null ? '—' : fmtTime(best)}</td>`;
+      tbody.appendChild(tr);
+    });
+  }
+
+  // The home panel's standings. Deliberately quiet: it is decoration beside the
+  // name / create / join flow, so a failed or throttled fetch leaves a single
+  // line of text and never touches those controls.
+  const HOME_STANDINGS_LIMIT = 8;
+
+  async function refreshHomeStandings() {
+    const tbody = document.querySelector('#home-standings-table tbody');
+    const empty = $('home-standings-empty');
+    if (!tbody) return;
+    try {
+      const res = await fetch('/api/leaderboard');
+      if (!res.ok) throw new Error('http ' + res.status);
+      const data = await res.json();
+      renderStandings(tbody, data.standings, true, HOME_STANDINGS_LIMIT);
+      const extra = data.standings.length - HOME_STANDINGS_LIMIT;
+      empty.textContent = data.standings.length
+        ? (extra > 0 ? `+${extra} more on the full leaderboard` : '')
+        : NO_RACES;
+    } catch {
+      tbody.innerHTML = '';
+      empty.textContent = 'Standings unavailable right now.';
+    }
+  }
+
   async function showLeaderboard() {
     showScreen('leaderboard');
     const tbody = document.querySelector('#standings-table tbody');
@@ -524,16 +594,8 @@
     try {
       const data = await (await fetch('/api/leaderboard')).json();
 
-      data.standings.forEach((s, i) => {
-        const best = Object.values(s.bestByMap || {});
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${i + 1}</td><td>${esc(s.name)}</td><td>${s.races}</td>` +
-          `<td>${s.wins}</td><td>${s.podiums}</td>` +
-          `<td>${best.length ? fmtTime(Math.min(...best)) : '—'}</td>`;
-        tbody.appendChild(tr);
-      });
-      $('standings-empty').textContent = data.standings.length
-        ? '' : 'No races yet — a race needs 2+ drivers to count.';
+      renderStandings(tbody, data.standings, false);
+      $('standings-empty').textContent = data.standings.length ? '' : NO_RACES;
 
       // One block per track that has any record, in map order.
       const wrap = $('records-wrap');
@@ -556,7 +618,14 @@
   }
 
   $('btn-leaderboard').onclick = showLeaderboard;
-  $('btn-lb-back').onclick = () => showScreen(socket && socket.connected && lobby ? 'lobby' : 'home');
+  $('btn-standings-full').onclick = showLeaderboard;
+  $('btn-lb-back').onclick = () => {
+    const back = socket && socket.connected && lobby ? 'lobby' : 'home';
+    showScreen(back);
+    // Coming back to home after a race: the standings beside the panel would
+    // otherwise still show the pre-race figures.
+    if (back === 'home') refreshHomeStandings();
+  };
 
   // ---- Input ----
   const input = { up: false, down: false, left: false, right: false };
@@ -892,6 +961,9 @@
   // ---- Bootstrap ----
   async function bootstrap() {
     renderControls();
+    // Not awaited: the standings panel is decoration, and blocking the profile
+    // fetch on it would delay the name gate for everyone.
+    refreshHomeStandings();
     let res;
     try {
       res = await fetch('/api/profile/me');
