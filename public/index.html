@@ -46,6 +46,20 @@
 
       <div id="controls-home" class="howto"></div>
     </div>
+
+    <!-- Standings alongside the panel. .screen.active is already a centred flex
+         row, so this sits beside the panel and wraps below it on narrow screens.
+         Read-only and independent of the socket: it must never block the
+         name / create / join flow, so every failure path here is silent. -->
+    <aside id="home-standings" class="panel side">
+      <h2 class="side-title">&#127942; Standings</h2>
+      <table id="home-standings-table" class="side-table">
+        <thead><tr><th>#</th><th>Driver</th><th>W</th><th>Best</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <p id="home-standings-empty" class="hint"></p>
+      <button id="btn-standings-full" class="btn subtle small">Full leaderboard &rarr;</button>
+    </aside>
   </div>
 
   <!-- LOBBY SCREEN -->
