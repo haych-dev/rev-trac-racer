@@ -342,30 +342,24 @@
   function drawMapPreview(cv, map, selected) {
     const c = cv.getContext('2d');
     const scale = Math.min(cv.width / WORLD_W, cv.height / WORLD_H);
-    c.fillStyle = selected ? '#e6edf9' : '#e9edf4';
+    c.fillStyle = RTScenery.PALETTE.grass;
     c.fillRect(0, 0, cv.width, cv.height);
     c.save();
     c.translate((cv.width - WORLD_W * scale) / 2, (cv.height - WORLD_H * scale) / 2);
     c.scale(scale, scale);
-    const path = new Path2D();
-    map.pts.forEach(([x, y], i) => (i === 0 ? path.moveTo(x, y) : path.lineTo(x, y)));
-    path.closePath();
-    c.lineJoin = 'round';
-    c.lineCap = 'round';
-    c.lineWidth = map.halfWidth * 2;
-    c.strokeStyle = selected ? '#1e396b' : '#94a3bd';
-    c.stroke(path);
-    c.lineWidth = 6;
-    c.setLineDash([26, 30]);
-    c.strokeStyle = selected ? BRAND_RED : 'rgba(255,255,255,0.65)';
-    c.stroke(path);
-    c.setLineDash([]);
+    RTScenery.paintPreview(c, map);
+    // Start marker, sized in world units so it survives the scale.
     const st = RTMaps.pointAt(map.path, 0);
-    c.fillStyle = selected ? '#fff' : '#5b6577';
+    c.fillStyle = selected ? '#fff' : 'rgba(255,255,255,0.7)';
     c.beginPath();
     c.arc(st.x, st.y, 22, 0, Math.PI * 2);
     c.fill();
     c.restore();
+    if (selected) {
+      c.strokeStyle = BRAND_RED;
+      c.lineWidth = 3;
+      c.strokeRect(1.5, 1.5, cv.width - 3, cv.height - 3);
+    }
   }
 
   function renderMapGrid(isHost) {
