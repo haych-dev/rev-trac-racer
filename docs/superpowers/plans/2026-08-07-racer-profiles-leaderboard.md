@@ -17,11 +17,11 @@ Every task's requirements implicitly include these.
 - **No new npm dependencies.** HMAC comes from `node:crypto`; cookie parsing is hand-rolled; JSON body parsing uses built-in `express.json()`. Do not add `cookie-parser`, `cookie`, or any test framework.
 - **Tests are plain node scripts**, matching the existing `test/` convention: print diagnostics, print `PASS` or `FAIL`, `process.exit(pass ? 0 : 1)`. There is no vitest/jest/mocha in this repo. Do not introduce one.
 - **Name rules, exact:** trimmed, regex `/^[A-Za-z0-9 _-]{3,16}$/`. Uniqueness is case-insensitive via a stored `nameLower`.
-- **Cookie:** name `rtr_pid`, value `<uuid>.<hmac-hex-32>`, flags `httpOnly`, `SameSite=Lax`, `Path=/`, `Max-Age=157680000` (5y). **Never set `Secure`** — mktools serves plain HTTP over LAN and a Secure cookie would never be sent, silently breaking all identity.
+- **Cookie:** name `rtr_pid`, value `<uuid>.<hmac-hex-32>`, flags `httpOnly`, `SameSite=Lax`, `Path=/`, `Max-Age=157680000` (5y). **Never set `Secure`** — the deploy host serves plain HTTP over LAN and a Secure cookie would never be sent, silently breaking all identity.
 - **Canonical laps for records is 3.** When `TOTAL_LAPS !== 3`, write no track records at all.
 - **`BOOST_SPEED = 660` lives in `constants.js`** and is imported by both `server.js` and `leaderboard.js`. Do not redeclare the literal in either file — `leaderboard.js` cannot `require('./server.js')` (that would boot an HTTP listener), so a shared module is what keeps the plausibility floor and the physics honest without a sync-by-comment invariant.
 - **Profile IDs are never sent to a client.** Not in `lobby`, not in `state`, not in `raceOver`, not in `/api/leaderboard`.
-- **Port stays 3005** on mktools (`PORT` env, published in compose).
+- **Port stays 3005** on the deploy host (`PORT` env, published in compose).
 - Store path is overridable with `RTR_STORE_PATH`; default `<repo>/data/store.json`.
 
 ---
@@ -470,7 +470,7 @@ Create `scripts/admin.js`:
  *   node scripts/admin.js list
  *   node scripts/admin.js release "Michael"
  *
- * On mktools:
+ * On the deploy host:
  *   docker exec rev-trac-racer node scripts/admin.js release "Michael"
  */
 const { createStore } = require('../store.js');
@@ -1130,7 +1130,7 @@ const COOKIE_MAX_AGE = 157680000; // 5 years, in seconds
 const limInput = createLimiter({ capacity: 60, refillPerSec: 60 });
 const limItem = createLimiter({ capacity: 10, refillPerSec: 10 });
 const limJoin = createLimiter({ capacity: 5, refillPerSec: 0.5 }); // 5 per 10s
-// Per-IP buckets: deliberately loose. mktools is LAN/VPN-only, so a whole
+// Per-IP buckets: deliberately loose. The deploy host is LAN/VPN-only, so a whole
 // office can share one NAT address — tight per-IP limits would punish the
 // normal case. These are DoS backstops, not the integrity mechanism.
 const limName = createLimiter({ capacity: 30, refillPerSec: 0.5 }); // 30/min
@@ -1193,7 +1193,7 @@ app.get('/api/profile/me', (req, res) => {
   // res.cookie() is native to Express — only *reading* req.cookies would need
   // cookie-parser, and we parse the header ourselves instead.
   //
-  // No Secure flag: mktools serves plain HTTP over LAN, and a Secure cookie
+  // No Secure flag: the deploy host serves plain HTTP over LAN, and a Secure cookie
   // would never be sent, silently breaking identity for everyone. maxAge here
   // is milliseconds, hence the *1000 on the seconds constant.
   res.cookie(profiles.COOKIE, minted.token, {
@@ -2194,14 +2194,14 @@ git commit -m "feat(client): required driver name, lobby controls, leaderboard s
 
 ---
 
-### Task 8: Persist on mktools and document
+### Task 8: Persist on the deploy host and document
 
 **Files:**
 - Modify: `docker-compose.yml`, `README.md`
 
 **Interfaces:**
 - Consumes: everything above.
-- Produces: a deployed, persistent leaderboard on `http://mktools:3005`.
+- Produces: a deployed, persistent leaderboard on `http://<deploy-host>:3005`.
 
 - [ ] **Step 1: Add the named volume**
 
@@ -2279,7 +2279,7 @@ Two boards, at **Leaderboard** on the home screen:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `PORT` | 3000 | Listen port (3005 on mktools) |
+| `PORT` | 3000 | Listen port (3005 on the deploy host) |
 | `LAPS` | 3 | Laps per race; any value other than 3 disables record-keeping |
 | `RTR_STORE_PATH` | `data/store.json` | Where profiles and the leaderboard live — point it at a temp file when running tests |
 | `RTR_DEBUG` | unset | `1` exposes `/debug/rooms`, which leaks room codes and names |
@@ -2347,17 +2347,17 @@ git add docker-compose.yml README.md
 git commit -m "feat(deploy): persist profiles and leaderboard in a named volume"
 ```
 
-- [ ] **Step 6: Deploy to mktools and verify**
+- [ ] **Step 6: Deploy to the deploy host and verify**
 
 ```bash
 rsync -az --delete --exclude='.git/' --exclude='node_modules/' --exclude='data/' \
-  ./ mfreeman@mktools:~/rev-trac-racer/
-ssh mfreeman@mktools "cd ~/rev-trac-racer && docker compose up -d --build"
+  ./ <deploy-user>@<deploy-host>:~/rev-trac-racer/
+ssh <deploy-user>@<deploy-host> "cd ~/rev-trac-racer && docker compose up -d --build"
 sleep 5
-curl -s -o /dev/null -w 'home        HTTP %{http_code}\n' http://mktools:3005/
-curl -s -o /dev/null -w 'leaderboard HTTP %{http_code}\n' http://mktools:3005/api/leaderboard
-curl -s -o /dev/null -w 'debug(404)  HTTP %{http_code}\n' http://mktools:3005/debug/rooms
-curl -si http://mktools:3005/api/profile/me | grep -i '^set-cookie'
+curl -s -o /dev/null -w 'home        HTTP %{http_code}\n' http://<deploy-host>:3005/
+curl -s -o /dev/null -w 'leaderboard HTTP %{http_code}\n' http://<deploy-host>:3005/api/leaderboard
+curl -s -o /dev/null -w 'debug(404)  HTTP %{http_code}\n' http://<deploy-host>:3005/debug/rooms
+curl -si http://<deploy-host>:3005/api/profile/me | grep -i '^set-cookie'
 ```
 
 Expected: `200`, `200`, `404`, and a `set-cookie: rtr_pid=...; HttpOnly; SameSite=Lax` line with **no** `Secure` flag.
@@ -2365,8 +2365,8 @@ Expected: `200`, `200`, `404`, and a `set-cookie: rtr_pid=...; HttpOnly; SameSit
 - [ ] **Step 7: Prove a real race lands on the leaderboard**
 
 ```bash
-node test/bots.js http://mktools:3005 4 0
-curl -s http://mktools:3005/api/leaderboard | python3 -m json.tool
+node test/bots.js http://<deploy-host>:3005 4 0
+curl -s http://<deploy-host>:3005/api/leaderboard | python3 -m json.tool
 ```
 
 Expected: the race PASSes, `standings` holds the four bot drivers with one win
@@ -2375,7 +2375,7 @@ the real board starts empty:
 
 ```bash
 for n in HostBot Bot1 Bot2 Bot3; do
-  ssh mfreeman@mktools "docker exec rev-trac-racer node scripts/admin.js release $n"
+  ssh <deploy-user>@<deploy-host> "docker exec rev-trac-racer node scripts/admin.js release $n"
 done
 ```
 
@@ -2383,7 +2383,7 @@ Note this only releases the names; the bot profiles keep their stats. If you
 would rather start completely clean, remove the volume instead:
 
 ```bash
-ssh mfreeman@mktools "cd ~/rev-trac-racer && docker compose down && docker volume rm rev-trac-racer_rtr-data && docker compose up -d --build"
+ssh <deploy-user>@<deploy-host> "cd ~/rev-trac-racer && docker compose down && docker volume rm rev-trac-racer_rtr-data && docker compose up -d --build"
 ```
 
 - [ ] **Step 8: Commit any deploy-time fixes**
@@ -2391,7 +2391,7 @@ ssh mfreeman@mktools "cd ~/rev-trac-racer && docker compose down && docker volum
 If steps 6-7 surfaced changes, commit them:
 
 ```bash
-git add -A && git commit -m "fix(deploy): corrections found verifying on mktools"
+git add -A && git commit -m "fix(deploy): corrections found verifying on the deploy host"
 ```
 
 ---
@@ -2403,7 +2403,7 @@ Run before calling the work done:
 - [ ] `npm test` passes
 - [ ] all four socket harnesses pass against a throwaway store
 - [ ] the real `data/store.json` has no test drivers in it
-- [ ] `http://mktools:3005` serves, and `/debug/rooms` 404s
+- [ ] `http://<deploy-host>:3005` serves, and `/debug/rooms` 404s
 - [ ] the profile cookie is `HttpOnly`, `SameSite=Lax`, and **not** `Secure`
 - [ ] a redeploy (`up -d --build --force-recreate`) preserves the leaderboard
 - [ ] Create/Join stay disabled until a name is saved

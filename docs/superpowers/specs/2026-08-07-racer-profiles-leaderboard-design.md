@@ -80,14 +80,14 @@ GET /api/profile/me
   invalid/absent cookie -> mint crypto.randomUUID() + HMAC-SHA256 signature
                            Set-Cookie: rtr_pid=<id>.<sig>
                              httpOnly, SameSite=Lax, Path=/, Max-Age 5y
-                             NOT Secure — mktools serves plain HTTP over LAN
+                             NOT Secure — the deploy host serves plain HTTP over LAN
                         -> { id, name: null }
   valid cookie          -> { id, name: "Michael" }
 ```
 
 The `Secure` flag is deliberately omitted. The two dashboards on this host
 already carry `INSECURE_COOKIES: "1"` for the same reason; a `Secure` cookie
-would never be sent over `http://mktools:3005` and identity would silently
+would never be sent over `http://<deploy-host>:3005` and identity would silently
 never work.
 
 ### Claiming a name
@@ -300,7 +300,7 @@ throttled, so a returning player is unaffected.
 
 ### Why the per-IP limits are loose
 
-mktools is reachable only over LAN/VPN, so a group of colleagues can egress from
+The deploy host is reachable only over LAN/VPN, so a group of colleagues can egress from
 a single NAT address. Tight per-IP limits would then punish the normal case —
 eight people joining a race from one office would trip a 20-socket cap, and a
 team creating profiles together would trip a 10/min claim limit.
@@ -369,7 +369,7 @@ New tests, each pinning a claim made above:
 ## 9. Deploy delta
 
 `docker-compose.yml` gains the named volume. The version currently running on
-mktools has none, so without this the leaderboard resets on every
+The deploy host has none, so without this the leaderboard resets on every
 `docker compose up -d --build`:
 
 ```yaml

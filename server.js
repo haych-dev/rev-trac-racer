@@ -33,7 +33,7 @@ app.get('/api/profile/me', (req, res) => {
   // res.cookie() is native to Express — only *reading* req.cookies would need
   // cookie-parser, and we parse the header ourselves instead.
   //
-  // No Secure flag: mktools serves plain HTTP over LAN, and a Secure cookie
+  // No Secure flag: the deploy host serves plain HTTP over LAN, and a Secure cookie
   // would never be sent, silently breaking identity for everyone. maxAge here
   // is milliseconds, hence the *1000 on the seconds constant.
   res.cookie(profiles.COOKIE, minted.token, {
@@ -126,7 +126,7 @@ const COOKIE_MAX_AGE = 157680000; // 5 years, in seconds
 const limInput = createLimiter({ capacity: 60, refillPerSec: 60 });
 const limItem = createLimiter({ capacity: 10, refillPerSec: 10 });
 const limJoin = createLimiter({ capacity: 5, refillPerSec: 0.5 }); // 5 per 10s
-// Per-IP buckets: deliberately loose. mktools is LAN/VPN-only, so a whole
+// Per-IP buckets: deliberately loose. The deploy host is LAN/VPN-only, so a whole
 // office can share one NAT address — tight per-IP limits would punish the
 // normal case. These are DoS backstops, not the integrity mechanism.
 const limName = createLimiter({ capacity: 30, refillPerSec: 0.5 }); // 30/min

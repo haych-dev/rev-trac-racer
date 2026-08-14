@@ -14,7 +14,7 @@
  * `list` only reads, so it is left unguarded; a slightly stale read is
  * harmless.
  *
- * On mktools, stop the service first so the one-off container is the only
+ * On the deploy host, stop the service first so the one-off container is the only
  * thing touching the store, then start it back up:
  *
  *   docker compose stop racer
