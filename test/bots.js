@@ -87,6 +87,22 @@ function makeBot(name, isHost, cookie) {
     if (!isHost) return;
     stateCount++;
 
+    // Projectiles: confirm they reach the wire, move under their own power, and
+    // are cleared again. Bots fire whatever they pick up, so over a full race
+    // with several drivers the three arrow kinds do come up.
+    if (state.shots) {
+      global.shotKinds = global.shotKinds || new Set();
+      global.shotSeen = global.shotSeen || new Map();
+      for (const sh of state.shots) {
+        global.shotKinds.add(sh.kind);
+        const prev = global.shotSeen.get(sh.id);
+        if (prev && Math.hypot(sh.x - prev.x, sh.y - prev.y) > 1) global.shotMoved = true;
+        global.shotSeen.set(sh.id, { x: sh.x, y: sh.y });
+      }
+      global.maxLiveShots = Math.max(global.maxLiveShots || 0, state.shots.length);
+      if (global.shotSeen.size && state.shots.length === 0) global.shotsCleared = true;
+    }
+
     // track closest approach to any pad (diagnostics)
     if (state.status === 'racing' && state.pads) {
       for (const p of state.players) {
@@ -159,6 +175,8 @@ async function finish(results) {
   log(`states received: ${stateCount}`);
   log(`item picked up: ${sawItemPickup}, item used: ${sawItemUse}`);
   log(`closest approach to a pad: ${Math.round(global.minPadDist || -1)}px`);
+  log(`shots seen: ${global.shotSeen ? global.shotSeen.size : 0} (${[...(global.shotKinds || [])].join(', ') || 'none'}), ` +
+      `max live: ${global.maxLiveShots || 0}, moved: ${!!global.shotMoved}, cleared: ${!!global.shotsCleared}`);
   log(`race finished cleanly: ${raceOverReceived}`);
   log(`leaderboard ok=${lbOk} populated=${lbPopulated} noPid=${lbNoPid}`);
   log(pass ? 'PASS' : 'FAIL');

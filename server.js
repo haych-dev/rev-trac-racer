@@ -3,6 +3,7 @@ const http = require('http');
 const path = require('path');
 const { Server } = require('socket.io');
 const { BOOST_SPEED } = require('./constants.js');
+const RTShots = require('./projectiles.js');
 
 const app = express();
 app.use(express.static(path.join(__dirname, 'public')));
@@ -158,7 +159,8 @@ function ipOf(req) {
   return req.socket?.remoteAddress || 'unknown';
 }
 
-const ITEMS = ['boost', 'cab', 'lock', 'shield', 'oops'];
+const ITEMS = ['boost', 'cab', 'lock', 'shield', 'oops', 'request', 'segregation', 'conflict'];
+const MAX_SHOTS_PER_ROOM = 24;
 
 // Item pads: a row of 3 boxes spanning the track width at each PAD_FRAC
 function buildPads(map) {
@@ -216,6 +218,7 @@ function createRoom(hostSocket, name) {
     mapId: 0,
     players: new Map(),
     hazards: [],
+    shots: [],
     pads: [],
     loop: null,
     countdownEnd: 0,
@@ -307,6 +310,7 @@ function startRace(room) {
   const map = mapOf(room);
   room.status = 'countdown';
   room.hazards = [];
+  room.shots = [];
   room.pads = buildPads(map);
   room.results = [];
   room.firstFinishAt = 0;
@@ -412,8 +416,10 @@ function rollItem(player, room) {
   // Players near the back get a better shot at aggressive items
   const behind = player.rank > room.players.size / 2;
   const weights = behind
-    ? { boost: 3, cab: 1, lock: 2, shield: 1, oops: 3 }
-    : { boost: 2, cab: 3, lock: 2, shield: 2, oops: 1 };
+    ? { boost: 3, cab: 1, lock: 2, shield: 1, oops: 3, request: 3, segregation: 2, conflict: 2 }
+    : { boost: 2, cab: 3, lock: 2, shield: 2, oops: 1, request: 1, segregation: 2, conflict: 2 };
+  // The leader has nobody ahead to request, so never hand them one.
+  if (player.rank === 1) weights.request = 0;
   const total = ITEMS.reduce((s, it) => s + weights[it], 0);
   let r = Math.random() * total;
   for (const it of ITEMS) {
@@ -480,6 +486,23 @@ function useItem(room, player) {
         }
       });
       player.lastEvent = 'oops';
+      break;
+    }
+    case 'request':
+    case 'segregation':
+    case 'conflict': {
+      if (room.shots.length >= MAX_SHOTS_PER_ROOM) break;
+      // Only `request` needs a target; the other two fly where they are pointed.
+      const target = item === 'request'
+        ? RTShots.pickTarget([...room.players.values()], player, scoreOf)
+        : null;
+      // A solo race has nobody to request. Consume the item and spawn nothing,
+      // matching `lock`, which already no-ops when there is nobody ahead.
+      if (item === 'request' && !target) { player.lastEvent = item; break; }
+      room.shots.push(RTShots.spawn(
+        item, player, target ? target.id : null, now,
+        Math.random().toString(36).slice(2, 8)));
+      player.lastEvent = item;
       break;
     }
   }
@@ -599,6 +622,29 @@ function tick(room) {
 
   room.hazards = room.hazards.filter((hz) => hz.expiresAt > now);
 
+  // --- projectiles ---
+  // Server-authoritative: clients receive positions to draw and never report a
+  // hit. Only advance while racing, so a shot cannot drift during the results
+  // screen or a countdown.
+  if (racing && room.shots.length) {
+    const live = [...room.players.values()];
+    for (const shot of room.shots) {
+      if (shot.dead || now >= shot.expiresAt) { shot.dead = true; continue; }
+      const target = shot.targetId ? room.players.get(shot.targetId) : null;
+      RTShots.advance(shot, target, map, DT);
+      if (shot.dead) continue;
+      const hits = RTShots.hitTest(shot, live, now);
+      if (!hits.length) continue;
+      for (const victim of hits) {
+        victim.spinUntil = now + RTShots.SPIN_MS;
+        victim.speed *= 0.2;
+        victim.lastEvent = shot.kind === 'request' ? 'blast' : 'spin';
+      }
+      shot.dead = true;
+    }
+    room.shots = room.shots.filter((sh) => !sh.dead);
+  }
+
   // --- car vs car collisions ---
   const active = players.filter((p) => !p.retired);
   for (let i = 0; i < active.length; i++) {
@@ -664,6 +710,12 @@ function tick(room) {
       };
     }),
     hazards: room.hazards.map((h) => ({ id: h.id, x: h.x, y: h.y })),
+    shots: room.shots.map((sh) => ({
+      id: sh.id, kind: sh.kind,
+      x: Math.round(sh.x * 10) / 10,
+      y: Math.round(sh.y * 10) / 10,
+      angle: Math.round(sh.angle * 1000) / 1000,
+    })),
     pads: room.pads.map((pd) => ({ id: pd.id, x: pd.x, y: pd.y, active: pd.active })),
   });
 

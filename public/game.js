@@ -18,6 +18,14 @@
     lock:   { label: '\u{1F512} Lock',             color: '#2d6fd6' },
     shield: { label: '⚡ Emergency',           color: '#d4a400' },
     oops:   { label: '\u{1F4A5} OOPS!',            color: '#d6336c' },
+    request:     { label: '\u{27A4} Request',      color: '#ff0080' },
+    segregation: { label: '\u{27A4} SoD',          color: '#c77dff' },
+    conflict:    { label: '\u{27A4} Conflict',     color: '#00b3d6' },
+  };
+
+  // Arrow colours, shared by the HUD label above and the canvas renderer.
+  const SHOT_COLORS = {
+    request: '#ff0080', segregation: '#c77dff', conflict: '#00b3d6',
   };
 
   const EVENT_TOASTS = {
@@ -26,6 +34,10 @@
     cab:    'CAB meeting scheduled behind you…',
     lock:   'Transport Lock deployed!',
     oops:   'OOPS! Everyone ahead spins out!',
+    request:     'Rev-Trac Request away — locked on the leader!',
+    segregation: 'Segregation of Duties — ricocheting!',
+    conflict:    'Conflict Check fired!',
+    blast:       '\u{1F4A5} Rev-Trac Request approved on YOU!',
     locked: '\u{1F512} Your transport is LOCKED!',
     spin:   '\u{1F4A5} OOPS’d! Change rejected!',
     cabbed: '\u{1F4CB} Stuck in CAB review!',
@@ -348,6 +360,9 @@
           <li><b class="c-lock">&#128274; Transport Lock</b><span>Freeze the car ahead of you</span></li>
           <li><b class="c-shield">&#9889; Emergency Change</b><span>Shield that skips the red tape — 5s immunity</span></li>
           <li><b class="c-oops">&#128165; OOPS!</b><span>Everyone ahead of you spins out</span></li>
+          <li><b class="c-request">&#10148; Rev-Trac Request</b><span>Homes in on the leader and explodes</span></li>
+          <li><b class="c-sod">&#10148; Segregation of Duties</b><span>Ricochets off the barriers — mind the rebound</span></li>
+          <li><b class="c-conflict">&#10148; Conflict Check</b><span>Fires straight ahead, spins the first car it finds</span></li>
         </ul>
       </section>
     </div>`;
@@ -745,6 +760,54 @@
     }
   }
 
+  // Projectile arrows. Positions come from the server every tick; the client
+  // never simulates one, so a patched client cannot fabricate a hit.
+  function drawShots(shots, t) {
+    if (!shots || !shots.length) return;
+    for (const sh of shots) {
+      const col = SHOT_COLORS[sh.kind] || '#fff';
+      ctx.save();
+      ctx.translate(sh.x, sh.y);
+
+      // A seeking missile should read as dangerous before it reaches you.
+      if (sh.kind === 'request') {
+        ctx.globalAlpha = 0.28 + 0.18 * Math.sin(t / 90);
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        ctx.arc(0, 0, 17, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+
+      ctx.rotate(sh.angle);
+      // Motion streak behind the arrow, so direction reads at speed.
+      const grad = ctx.createLinearGradient(-6, 0, -30, 0);
+      grad.addColorStop(0, col);
+      grad.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(-6, 0);
+      ctx.lineTo(-30, 0);
+      ctx.stroke();
+
+      ctx.fillStyle = col;
+      ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+      ctx.lineWidth = 1.5;
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(14, 0);
+      ctx.lineTo(-6, -8);
+      ctx.lineTo(-2, 0);
+      ctx.lineTo(-6, 8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
   function roundRect(x, y, w, h, r) {
     ctx.beginPath();
     ctx.moveTo(x + r, y);
@@ -900,6 +963,7 @@
       drawTrack(MAPS[currentMapId] || MAPS[0]);
       drawPads(latestState.pads);
       drawHazards(latestState.hazards);
+      drawShots(latestState.shots, t);
       // draw finished cars first so active racers render on top
       const sorted = latestState.players.slice().sort((a, b) => Number(b.finished) - Number(a.finished));
       for (const p of sorted) drawCar(p, t);
