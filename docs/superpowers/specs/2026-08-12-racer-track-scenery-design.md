@@ -60,7 +60,7 @@ Measured, per side:
 | Transport Twister | 80 | 218 | 29px |
 | Audit Trail | 74 | 201 | 26px |
 | Sandbox Scramble | 88 | 223 | 23px |
-| Hotfix Hairpin | 75 | 195 | 22px |
+| Hotfix Hairpin | 75 | 195 | 23px |
 | Integration Esses | 72 | 188 | 22px |
 | Double Downtime | 70 | 157 | **8px** |
 
@@ -106,7 +106,7 @@ loop. Cost is ~170k hypot operations across all eight maps at module load — a 
 milliseconds, paid once, on both server and client. No server behaviour changes.
 
 `public/game.js` changes: `drawTrack` becomes a blit from a cached layer; `drawMapPreview`
-calls `paintPreview`; `drawCarBody` gains an outline. `public/index.html` gains a
+calls `paintPreview`. `public/index.html` gains a
 `<script src="scenery.js">` tag between `maps.js` and `game.js`.
 
 ## 5. Derivation rules
@@ -134,12 +134,28 @@ normal and step out to `want = halfWidth + runoff + 16`. Keep the slot only if a
 Of surviving slots: the first 55% of the PRNG range becomes a `board`, the next 17% becomes
 `tyres`, the remainder stays empty so the spacing is irregular rather than mechanical.
 
-**Scenery:** placed only where `RTMaps.closest(...).dist` exceeds a floor (190 for stands,
-175 for cars, 150 for trees) **and** the candidate is outside an exclusion rectangle around
-`map.logo` inflated by 30px. The logo exclusion is required: the infield is far from the
-centreline, so the distance test alone drops trees straight onto the Rev-Trac wordmark — the
-mockup did exactly that. Counts are up to 2 stands, 26 cars, 60 trees, each subject to the
-tests, so open circuits get more than cramped ones.
+**Scenery:** every candidate is also required to be outside an exclusion rectangle around
+`map.logo` inflated by `LOGO_PAD = 30`px. The logo exclusion is required: the infield is far
+from the centreline, so a distance test alone drops trees straight onto the Rev-Trac wordmark
+— the mockup did exactly that.
+
+- **Stands** (`STAND_W = 120` by `STAND_H = 210`) are not placed at fixed positions. An
+  earlier version of this design put them at fixed corner slots, but that left five of the
+  eight tracks with no grandstand at all — circuits that use the full world pass within a
+  stand's width of every corner, so a fixed slot is inside the corridor as often as not.
+  Instead the world is scanned on a 70px grid (up to 2 stands per map, kept apart from each
+  other). A candidate position is accepted only if its centre, all four corners, **and** all
+  four edge midpoints clear `need = halfWidth + runoffFor(map) + STAND_CLEAR` (`STAND_CLEAR =
+  30`) — checking the corners alone lets a track pass edge-on through the middle of a side
+  without tripping the test. `need` is therefore derived per track, not fixed: it works out to
+  roughly 100–154px depending on the circuit (100px on Double Downtime, up to 154px on
+  Go-Live GP).
+- **Cars** clear `CAR_FLOOR = 135`px from the centreline and must not overlap a placed stand.
+- **Trees** clear `TREE_FLOOR = 150`px from the centreline and must not overlap a placed
+  stand.
+
+Counts are up to 2 stands, 26 cars, 60 trees attempted, each subject to the tests above, so
+open circuits get more than cramped ones.
 
 **Determinism:** a seeded xorshift32 PRNG keyed on `map.id`. Every client decorates a track
 identically and screenshots reproduce. `Math.random` is not used.

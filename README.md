@@ -57,6 +57,24 @@ Tracks are defined as centerline control-point loops in [public/maps.js](public/
 and it shows up in the lobby automatically. `node test/validate-maps.js` checks that a
 new track stays in bounds and never overlaps itself.
 
+Track decoration (kerbs, sand run-off, barrier boards, tyre stacks, grandstands,
+trees) is drawn by `public/scenery.js` and is **purely cosmetic** — the server
+never loads that file and nothing in it affects the simulation. Cars pass through
+barriers; running off the track only caps your speed, as it always has.
+
+Every width and placement is derived from the track's own geometry rather than
+hand-tuned, because the circuits have between 51px and 8px of grass between
+neighbouring parts of the same loop. A track with no room simply gets less
+decoration: Double Downtime has no sand run-off, and barrier boards appear only
+where a `closest()` corridor test confirms there is trackside to stand on. To
+change the whole look, edit `PALETTE` in `public/scenery.js`.
+
+The brighter grass (`PALETTE.grass`, `#7fb442`) sits closer in luminance to
+several car colours than the old dark grass did, so a car that strays off the
+track reads primarily by its dark outline and silhouette rather than by its
+body colour — the `rgba(0,0,0,0.45)` stroke `drawCarBody` already applies is
+what carries that legibility, not the fill.
+
 ## Rooms
 
 - Up to **8 players** per room, each with a unique car from a garage of 16

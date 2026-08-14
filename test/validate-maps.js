@@ -15,6 +15,10 @@ for (const map of RTMaps.MAPS) {
   const hw = map.halfWidth;
   const issues = [];
 
+  // A non-finite clearance means the arc-exclusion window swallowed the whole
+  // loop, which would silently hand the renderer an unbounded decoration budget.
+  if (!Number.isFinite(map.clearance)) issues.push('clearance is not finite');
+
   // bounds
   for (const [x, y] of pts) {
     if (x < hw + 5 || x > WORLD_W - hw - 5 || y < hw + 5 || y > WORLD_H - hw - 5) {
@@ -23,27 +27,18 @@ for (const map of RTMaps.MAPS) {
     }
   }
 
-  // self-clearance: points far apart along the arc must be far apart in space
+  // self-clearance: points far apart along the arc must be far apart in space.
+  // maps.js computes this so the validator and the renderer share one definition.
   const minGap = 2 * hw + 15;
-  const arcExclusion = 3 * hw;
-  let worst = { d: Infinity };
-  for (let i = 0; i < pts.length; i++) {
-    for (let j = i + 1; j < pts.length; j++) {
-      const arcFwd = map.path.cum[j] - map.path.cum[i];
-      const arc = Math.min(arcFwd, total - arcFwd);
-      if (arc <= arcExclusion) continue;
-      const d = Math.hypot(pts[i][0] - pts[j][0], pts[i][1] - pts[j][1]);
-      if (d < worst.d) worst = { d, i, j };
-    }
-  }
-  if (worst.d < minGap) {
-    const [x1, y1] = pts[worst.i];
-    issues.push(`corridor too tight: ${Math.round(worst.d)}px < ${minGap}px near (${Math.round(x1)}, ${Math.round(y1)})`);
+  if (map.clearance < minGap) {
+    const worst = RTMaps.selfClearance(map.path, hw); // only on the failure path
+    const [x1, y1] = map.path.pts[worst.i];
+    issues.push(`corridor too tight: ${Math.round(map.clearance)}px < ${minGap}px near (${Math.round(x1)}, ${Math.round(y1)})`);
   }
 
   if (total < 2000) issues.push(`track too short: ${Math.round(total)}px`);
 
-  const label = `${map.name.padEnd(20)} len=${Math.round(total)}px hw=${hw} clearance=${Math.round(worst.d)}px`;
+  const label = `${map.name.padEnd(20)} len=${Math.round(total)}px hw=${hw} clearance=${Math.round(map.clearance)}px`;
   if (issues.length) {
     failures++;
     console.log(`FAIL ${label}`);
