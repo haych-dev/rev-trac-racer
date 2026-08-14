@@ -166,6 +166,10 @@ input:disabled { opacity: .45; cursor: not-allowed; }
 .c-lock { color: #2d6fd6 !important; }
 .c-shield { color: #d4a400 !important; }
 .c-oops { color: #d6336c !important; }
+/* the three projectile arrows, matching SHOT_COLORS in game.js */
+.c-request { color: #ff0080 !important; }
+.c-sod { color: #c77dff !important; }
+.c-conflict { color: #00b3d6 !important; }
 .controls { margin-top: 10px; font-size: 13px; color: var(--muted); }
 kbd {
   background: var(--navy-soft); border: 1px solid #c3d0e8; color: var(--navy);
