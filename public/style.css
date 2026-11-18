@@ -49,6 +49,14 @@ input {
   background: #fff; color: var(--text); font-size: 16px; margin-bottom: 14px; outline: none;
 }
 input:focus { border-color: var(--navy); box-shadow: 0 0 0 3px rgba(30,57,107,.15); }
+input:disabled { background: var(--panel2); color: #9aa5b8; cursor: not-allowed; }
+
+.name-row { display: flex; gap: 10px; }
+.name-row input { flex: 1; margin-bottom: 0; }
+.name-row .btn { width: 96px; }
+#name-status { margin: 6px 0 14px; }
+.hint.ok { color: #1d7a2b; font-weight: 600; }
+.hint.error { color: var(--red-dark); }
 
 .btn {
   display: inline-block; width: 100%; padding: 12px 18px;

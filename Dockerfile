@@ -2,7 +2,8 @@ FROM node:22-alpine
 
 ENV NODE_ENV=production \
     PORT=3000 \
-    RECORDS_FILE=/app/data/records.json
+    RECORDS_FILE=/app/data/records.json \
+    RTR_STORE_PATH=/app/data/store.json
 
 WORKDIR /app
 
@@ -12,8 +13,10 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY server.js ./
 COPY lib ./lib
 COPY public ./public
+COPY scripts ./scripts
 
-# Hall-of-fame records live here; mount a volume to keep them across deploys.
+# Driver profiles (with the cookie-signing secret) and hall-of-fame records
+# live here; mount a volume to keep them across deploys.
 RUN mkdir -p /app/data && chown node:node /app/data
 VOLUME /app/data
 

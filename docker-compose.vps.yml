@@ -16,8 +16,16 @@ services:
     memswap_limit: 256m
     expose:
       - "3000"
+    environment:
+      # The container is only reachable through Traefik, which discards any
+      # client-sent X-Forwarded-For and writes the real address, so the header
+      # can be trusted here for the per-IP rate limits. Never set this where
+      # the port is published directly.
+      RTR_TRUST_PROXY: "1"
+      # Served over HTTPS only, so the profile cookie can be Secure.
+      RTR_COOKIE_SECURE: "1"
     volumes:
-      - racer-data:/app/data   # hall of fame
+      - racer-data:/app/data   # driver profiles + hall of fame
     restart: unless-stopped
     labels:
       - traefik.enable=true

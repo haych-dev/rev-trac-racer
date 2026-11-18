@@ -7,7 +7,10 @@
   const { CARS, BODIES, statsFor } = RTCars;
   const { ITEMS, CHAOS, FLAGS: F, AWARDS, POINTS } = RTItems;
 
-  const socket = io();
+  // Not connected yet: the socket handshake is authenticated by the profile
+  // cookie, and that cookie only exists once /api/profile/me has answered.
+  // bootstrap() connects it.
+  const socket = io({ autoConnect: false });
   const $ = (id) => document.getElementById(id);
   const INTERP_MS = 100; // render this far behind the newest snapshot
 
@@ -60,7 +63,10 @@
       // a focused button would otherwise swallow Space/Enter during the race
       if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     }
-    if (name === 'home') loadHallOfFame();
+    if (name === 'home') {
+      loadHallOfFame();
+      if (profile.id) renderNameGate();
+    }
     if (name !== 'game') A.engine(0, false, 0);
   }
 
@@ -71,36 +77,112 @@
   // =========================================================================
   // HOME
   // =========================================================================
-  const nameInput = $('name-input');
-  try { nameInput.value = localStorage.getItem('rtr-name') || ''; } catch (e) { /* ignore */ }
+  // The driver name lives on the server profile (a signed cookie owns it), so
+  // there is no local copy: only ever one answer to "who am I".
+  let profile = { id: null, name: null };
   const roomParam = new URLSearchParams(location.search).get('room');
   if (roomParam) $('code-input').value = roomParam.toUpperCase().slice(0, 4);
 
-  function driverName() {
-    const n = nameInput.value.trim() || 'Racer';
-    try { localStorage.setItem('rtr-name', n); } catch (e) { /* ignore */ }
-    return n;
+  function setNameStatus(text, cls) {
+    $('name-status').textContent = text;
+    $('name-status').className = 'hint' + (cls ? ' ' + cls : '');
+  }
+
+  function renderNameGate() {
+    const claimed = !!profile.name;
+    $('name-input').value = profile.name || '';
+    $('btn-create').disabled = !claimed;
+    $('btn-join').disabled = !claimed;
+    // The code field must move with the button: its Enter handler calls
+    // joinRoom() directly, so a live input is a route around the whole gate.
+    $('code-input').disabled = !claimed;
+    setNameStatus(claimed ? `Racing as ${profile.name}` : 'Pick a name to start racing — it is yours once saved.', claimed ? 'ok' : '');
+    if (claimed) $('home-error').textContent = '';
+  }
+
+  async function claimName() {
+    const name = $('name-input').value.trim();
+    setNameStatus('Saving…');
+    try {
+      const res = await fetch('/api/profile/name', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      const body = await res.json();
+      if (!res.ok) { setNameStatus(body.error || 'Could not save that name', 'error'); return; }
+      profile.name = body.name;
+      renderNameGate();
+    } catch (e) {
+      setNameStatus('Network error — try again', 'error');
+    }
+  }
+  $('btn-claim').onclick = claimName;
+  $('name-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') claimName(); });
+
+  // The server refuses every room action until a name is claimed. If that
+  // happens the local profile is stale, so drop back to the gate.
+  function handleRoomError(res) {
+    const err = res && res.error;
+    if (err === 'Claim a name first' || err === 'No profile' || err === 'Invalid profile') {
+      profile.name = null;
+      showScreen('home');
+      renderNameGate();
+      $('home-error').textContent = 'Please save a driver name first.';
+      return true;
+    }
+    return false;
   }
 
   $('btn-create').onclick = () => {
     A.unlock();
-    socket.emit('createRoom', { name: driverName() }, (res) => {
+    socket.emit('createRoom', {}, (res) => {
       if (res && res.ok) { $('home-error').textContent = ''; showScreen('lobby'); }
-      else $('home-error').textContent = (res && res.error) || 'Could not create room';
+      else if (!handleRoomError(res)) $('home-error').textContent = (res && res.error) || 'Could not create room';
     });
   };
   function joinRoom() {
     A.unlock();
     const code = $('code-input').value.trim().toUpperCase();
     if (code.length !== 4) { $('home-error').textContent = 'Enter a 4-character room code'; return; }
-    socket.emit('joinRoom', { code, name: driverName() }, (res) => {
+    socket.emit('joinRoom', { code }, (res) => {
       if (res && res.ok) { $('home-error').textContent = ''; showScreen('lobby'); }
-      else $('home-error').textContent = (res && res.error) || 'Could not join';
+      else if (!handleRoomError(res)) $('home-error').textContent = (res && res.error) || 'Could not join';
     });
   }
   $('btn-join').onclick = joinRoom;
   $('code-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinRoom(); });
-  nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') ($('code-input').value ? joinRoom() : $('btn-create').click()); });
+
+  function profileUnavailable(msg) {
+    setNameStatus(msg, 'error');
+    $('btn-claim').disabled = true;
+    $('btn-create').disabled = true;
+    $('btn-join').disabled = true;
+    $('code-input').disabled = true;
+  }
+
+  // Fetch (or mint) the profile, then connect: only now is the cookie
+  // guaranteed to exist for the socket handshake to verify.
+  async function bootstrap() {
+    setNameStatus('Connecting…');
+    let res;
+    try {
+      res = await fetch('/api/profile/me');
+    } catch (e) {
+      profileUnavailable('Could not reach the server — reload to retry');
+      return;
+    }
+    // Minting is rate limited, so this can be a 429 with {ok:false,error}
+    // rather than {id,name}.
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      profileUnavailable(body.error || 'Could not reach the server — reload to retry');
+      return;
+    }
+    profile = await res.json();
+    socket.connect();
+    renderNameGate();
+  }
 
   $('item-list').innerHTML = Object.values(ITEMS).map((it) =>
     `<li><b><span class="ico" style="color:${it.color}">${it.icon}</span> ${esc(it.name)}</b>${esc(it.desc)}</li>`).join('');
@@ -367,6 +449,15 @@
     A.music(false);
     showScreen('home');
     $('home-error').textContent = 'Disconnected from the server.';
+  });
+  // The handshake itself can be refused (too many connections from one address).
+  socket.on('connect_error', (err) => {
+    $('home-error').textContent = err && err.message === 'Too many connections'
+      ? 'Too many connections from your network — close a tab and reload.'
+      : 'Cannot reach the server — retrying…';
+  });
+  socket.on('connect', () => {
+    if ($('home-error').textContent.startsWith('Cannot reach')) $('home-error').textContent = '';
   });
 
   // ---- events → sound, particles, feed --------------------------------------
@@ -780,6 +871,7 @@
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+  bootstrap();
 
   // Dev/test hooks (headless browsers never fire requestAnimationFrame).
   window.__rt = {
