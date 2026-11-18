@@ -1,73 +1,34 @@
+'use strict';
 const express = require('express');
 const http = require('http');
+const os = require('os');
 const path = require('path');
+const { performance } = require('perf_hooks');
 const { Server } = require('socket.io');
+
+const RTMaps = require('./public/maps.js');
+const { CARS } = require('./public/cars.js');
+const { POINTS, FASTEST_LAP_BONUS } = require('./public/items.js');
+const { Race, DT_MS } = require('./lib/race.js');
+const { SKILLS } = require('./lib/bots.js');
+const { Records } = require('./lib/records.js');
+
+const PORT = process.env.PORT || 3000;
+const MAX_PLAYERS = 8;
+const LAP_CHOICES = [1, 3, 5, 8, 12];
+const BOT_NAMES = [
+  'Legacy Larry', 'Waterfall Wendy', 'Friday Deploy Fred', 'Spreadsheet Steve',
+  'Manual Mandy', 'Hotfix Harry', 'Cowboy Carl', 'Rubber-Stamp Rita',
+];
+
+const records = new Records(process.env.RECORDS_FILE || path.join(__dirname, 'data', 'records.json'));
 
 const app = express();
 app.use(express.static(path.join(__dirname, 'public')));
-
-app.get('/debug/rooms', (req, res) => {
-  res.json([...rooms.values()].map((r) => ({
-    code: r.code,
-    status: r.status,
-    hostId: r.hostId,
-    players: [...r.players.values()].map((p) => ({ id: p.id, name: p.name, carId: p.carId, ready: p.ready })),
-  })));
-});
+app.get('/api/records', (req, res) => res.json(records.summary()));
 
 const server = http.createServer(app);
 const io = new Server(server);
-
-const PORT = process.env.PORT || 3000;
-
-// ---------------------------------------------------------------------------
-// Constants (track geometry must match public/game.js)
-// ---------------------------------------------------------------------------
-const MAX_PLAYERS = 8;
-const TOTAL_LAPS = Number(process.env.LAPS) || 3;
-const TICK_RATE = 30;
-const DT = 1 / TICK_RATE;
-
-const RTMaps = require('./public/maps.js');
-const SECTORS = 8; // sequential checkpoints per lap, by arc-length
-const PAD_FRACS = [0.12, 0.28, 0.45, 0.62, 0.78, 0.92]; // item rows along the lap
-
-const { CARS } = require('./public/cars.js');
-
-const ITEMS = ['boost', 'cab', 'lock', 'shield', 'oops'];
-
-// Item pads: a row of 3 boxes spanning the track width at each PAD_FRAC
-function buildPads(map) {
-  const pads = [];
-  let id = 0;
-  const lat = map.halfWidth - 35;
-  for (const f of PAD_FRACS) {
-    const pt = RTMaps.pointAt(map.path, f);
-    const nx = -pt.ty, ny = pt.tx;
-    for (const off of [-lat, 0, lat]) {
-      pads.push({ id: id++, x: pt.x + nx * off, y: pt.y + ny * off, active: true, respawnAt: 0 });
-    }
-  }
-  return pads;
-}
-
-// Physics
-const ACCEL = 420;
-const BRAKE = 520;
-const REVERSE_MAX = -120;
-const MAX_SPEED = 420;
-const BOOST_SPEED = 660;
-const OFFTRACK_MAX = 140;
-const FRICTION = 1.6;       // per-second speed decay factor
-const TURN_RATE = 3.0;      // rad/s at full speed factor
-const CAR_RADIUS = 18;
-
-// ---------------------------------------------------------------------------
-// Track helpers
-// ---------------------------------------------------------------------------
-function mapOf(room) {
-  return RTMaps.MAPS[room.mapId] || RTMaps.MAPS[0];
-}
 
 // ---------------------------------------------------------------------------
 // Rooms
@@ -84,56 +45,58 @@ function makeRoomCode() {
   return code;
 }
 
-function createRoom(hostSocket, name) {
-  const code = makeRoomCode();
+function createRoom(socket, name) {
   const room = {
-    code,
-    hostId: hostSocket.id,
-    status: 'lobby', // lobby | countdown | racing | finished
-    mapId: 0,
-    players: new Map(),
-    hazards: [],
-    pads: [],
+    code: makeRoomCode(),
+    hostId: socket.id,
+    status: 'lobby', // lobby | racing
+    settings: {
+      mapId: 0,
+      laps: Number(process.env.LAPS) || 5,
+      mode: 'race',      // race | elimination
+      chaos: true,
+      bots: 3,
+      botSkill: 'medium',
+    },
+    players: new Map(),     // socket.id -> { id, name, carId, ready }
+    standings: new Map(),   // lowercased name -> { name, bot, carId, points, wins, races }
+    race: null,
     loop: null,
-    countdownEnd: 0,
-    raceStart: 0,
-    firstFinishAt: 0,
-    results: [],
+    raceNo: 0,
   };
-  rooms.set(code, room);
-  addPlayer(room, hostSocket, name);
+  rooms.set(room.code, room);
+  addPlayer(room, socket, name);
   return room;
 }
 
+function cleanName(room, raw) {
+  let name = String(raw || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 16) || 'Racer';
+  const taken = new Set([...room.players.values()].map((p) => p.name.toLowerCase()));
+  BOT_NAMES.forEach((b) => taken.add(b.toLowerCase()));
+  let candidate = name, n = 2;
+  while (taken.has(candidate.toLowerCase())) candidate = `${name.slice(0, 14)} ${n++}`;
+  return candidate;
+}
+
 function addPlayer(room, socket, name) {
-  const usedCars = new Set([...room.players.values()].map((p) => p.carId));
-  let carId = CARS.findIndex((c) => !usedCars.has(c.id));
-  if (carId === -1) carId = 0;
+  const used = new Set([...room.players.values()].map((p) => p.carId));
+  const free = CARS.filter((c) => !used.has(c.id));
   room.players.set(socket.id, {
     id: socket.id,
-    name: String(name || 'Racer').trim().slice(0, 16) || 'Racer',
-    carId,
+    name: cleanName(room, name),
+    carId: (free[Math.floor(Math.random() * free.length)] || CARS[0]).id,
     ready: false,
-    // race state
-    x: 0, y: 0, angle: 0, speed: 0,
-    input: { up: false, down: false, left: false, right: false },
-    item: null,
-    lap: 0,
-    nextSector: 1,  // next arc-length sector to hit (spawn is just behind sector 0)
-    cpCount: 0,     // total sectors hit
-    _u: 0,          // latest progress fraction along the lap
-    rank: 1,
-    finished: false,
-    retired: false,
-    finishTime: 0,
-    boostUntil: 0,
-    spinUntil: 0,
-    lockedUntil: 0,
-    shieldUntil: 0,
-    lastEvent: null, // transient, sent once in state then cleared
   });
   socket.join(room.code);
   socket.data.roomCode = room.code;
+}
+
+function botCount(room) {
+  return Math.max(0, Math.min(room.settings.bots, MAX_PLAYERS - room.players.size));
+}
+
+function standingsList(room) {
+  return [...room.standings.values()].sort((a, b) => b.points - a.points || b.wins - a.wins);
 }
 
 function lobbyState(room) {
@@ -141,11 +104,13 @@ function lobbyState(room) {
     code: room.code,
     hostId: room.hostId,
     status: room.status,
-    mapId: room.mapId,
-    cars: CARS,
-    players: [...room.players.values()].map((p) => ({
-      id: p.id, name: p.name, carId: p.carId, ready: p.ready,
-    })),
+    settings: room.settings,
+    lapChoices: LAP_CHOICES,
+    botCount: botCount(room),
+    botNames: BOT_NAMES.slice(0, botCount(room)),
+    raceNo: room.raceNo,
+    players: [...room.players.values()],
+    standings: standingsList(room),
   };
 }
 
@@ -154,482 +119,228 @@ function broadcastLobby(room) {
 }
 
 function removePlayer(socket) {
-  const code = socket.data.roomCode;
-  if (!code) return;
-  const room = rooms.get(code);
+  const room = rooms.get(socket.data.roomCode);
   if (!room) return;
   room.players.delete(socket.id);
-  socket.leave(code);
+  socket.leave(room.code);
   socket.data.roomCode = null;
+  if (room.race) room.race.retire(socket.id);
 
   if (room.players.size === 0) {
     if (room.loop) clearInterval(room.loop);
-    rooms.delete(code);
+    rooms.delete(room.code);
     return;
   }
-  if (room.hostId === socket.id) {
-    room.hostId = room.players.keys().next().value;
-  }
+  if (room.hostId === socket.id) room.hostId = room.players.keys().next().value;
   broadcastLobby(room);
-  if (room.status === 'racing' || room.status === 'countdown') {
-    checkRaceEnd(room);
-  }
 }
 
 // ---------------------------------------------------------------------------
 // Race lifecycle
 // ---------------------------------------------------------------------------
 function startRace(room) {
-  const map = mapOf(room);
-  room.status = 'countdown';
-  room.hazards = [];
-  room.pads = buildPads(map);
-  room.results = [];
-  room.firstFinishAt = 0;
-  room.countdownEnd = Date.now() + 3000;
-  room.raceStart = room.countdownEnd;
-
-  // Grid: two staggered columns just behind the start line, facing along the track
-  const players = [...room.players.values()];
-  players.forEach((p, i) => {
-    const col = i % 2;
-    const row = Math.floor(i / 2);
-    const pt = RTMaps.pointAt(map.path, 1 - 0.018 * (row + 1));
-    const nx = -pt.ty, ny = pt.tx;
-    const off = col === 0 ? -32 : 32;
-    p.x = pt.x + nx * off;
-    p.y = pt.y + ny * off;
-    p.angle = Math.atan2(pt.ty, pt.tx);
-    p.speed = 0;
-    p.item = null;
-    p.lap = 0;
-    p.nextSector = 1;
-    p.cpCount = 0;
-    p._u = 0;
-    p.rank = i + 1;
-    p.finished = false;
-    p.retired = false;
-    p.finishTime = 0;
-    p.boostUntil = 0;
-    p.spinUntil = 0;
-    p.lockedUntil = 0;
-    p.shieldUntil = 0;
-    p.input = { up: false, down: false, left: false, right: false };
-    p.lastEvent = null;
+  const s = room.settings;
+  const humans = [...room.players.values()].map((p) => ({ id: p.id, name: p.name, carId: p.carId, bot: null }));
+  const usedCars = new Set(humans.map((h) => h.carId));
+  const freeCars = CARS.filter((c) => !usedCars.has(c.id)).sort(() => Math.random() - 0.5);
+  const bots = BOT_NAMES.slice(0, botCount(room)).map((name, i) => {
+    const prev = room.standings.get(name.toLowerCase());
+    // a bot keeps its car between races when nobody has taken it
+    const keep = prev && !usedCars.has(prev.carId) ? prev.carId : null;
+    const carId = keep != null ? keep : (freeCars.pop() || CARS[0]).id;
+    usedCars.add(carId);
+    const idx = freeCars.findIndex((c) => c.id === carId);
+    if (idx >= 0) freeCars.splice(idx, 1);
+    return { id: `bot:${i}`, name, carId, bot: { skill: s.botSkill } };
   });
 
+  // Reverse-championship grid: the points leader starts at the back.
+  const pts = (e) => (room.standings.get(e.name.toLowerCase()) || { points: 0 }).points;
+  const entrants = [...humans, ...bots]
+    .map((e) => ({ e, key: pts(e) + Math.random() * 0.5 }))
+    .sort((a, b) => a.key - b.key)
+    .map((x) => x.e);
+
+  room.race = new Race({ mapId: s.mapId, laps: s.laps, mode: s.mode, chaos: s.chaos, entrants });
+  room.status = 'racing';
+  room.raceNo++;
+  room.players.forEach((p) => { p.ready = false; });
+  io.to(room.code).emit('raceStart', room.race.staticInfo());
   broadcastLobby(room);
+
   if (room.loop) clearInterval(room.loop);
-  room.loop = setInterval(() => tick(room), 1000 / TICK_RATE);
+  let last = performance.now();
+  let acc = 0;
+  let sinceSnap = 0;
+  room.loop = setInterval(() => {
+    const race = room.race;
+    if (!race) return;
+    const now = performance.now();
+    acc = Math.min(250, acc + (now - last));
+    last = now;
+    let ticked = false;
+    while (acc >= DT_MS && !race.over) {
+      race.tick();
+      acc -= DT_MS;
+      sinceSnap++;
+      ticked = true;
+    }
+    if (ticked && (sinceSnap >= 2 || race.over)) {
+      sinceSnap = 0;
+      io.to(room.code).emit('state', race.snapshot());
+    }
+    if (race.over) finishRace(room);
+  }, 8);
 }
 
-function checkRaceEnd(room) {
-  const racers = [...room.players.values()];
-  if (racers.length === 0) return;
-  const allDone = racers.every((p) => p.finished);
-  const timeUp = room.firstFinishAt && Date.now() - room.firstFinishAt > 30000;
-  const raceExpired = room.status === 'racing' && Date.now() - room.raceStart > 5 * 60 * 1000;
-  if (allDone || timeUp || raceExpired) {
-    room.status = 'finished';
-    if (room.loop) { clearInterval(room.loop); room.loop = null; }
-    const results = racers
-      .map((p) => ({
-        name: p.name,
-        carId: p.carId,
-        finished: p.finished && !p.retired,
-        time: p.finished && !p.retired ? p.finishTime - room.raceStart : null,
-        laps: p.lap,
-      }))
-      .sort((a, b) => {
-        if (a.finished && b.finished) return a.time - b.time;
-        if (a.finished) return -1;
-        if (b.finished) return 1;
-        return b.laps - a.laps;
-      });
-    room.results = results;
-    io.to(room.code).emit('raceOver', { results });
-    // reset ready flags for the next round
-    room.players.forEach((p) => { p.ready = false; });
-    broadcastLobby(room);
-  }
-}
+function finishRace(room) {
+  const race = room.race;
+  clearInterval(room.loop);
+  room.loop = null;
+  room.race = null;
+  room.status = 'lobby';
 
-// ---------------------------------------------------------------------------
-// Items
-// ---------------------------------------------------------------------------
-function rollItem(player, room) {
-  // Players near the back get a better shot at aggressive items
-  const behind = player.rank > room.players.size / 2;
-  const weights = behind
-    ? { boost: 3, cab: 1, lock: 2, shield: 1, oops: 3 }
-    : { boost: 2, cab: 3, lock: 2, shield: 2, oops: 1 };
-  const total = ITEMS.reduce((s, it) => s + weights[it], 0);
-  let r = Math.random() * total;
-  for (const it of ITEMS) {
-    r -= weights[it];
-    if (r <= 0) return it;
-  }
-  return 'boost';
-}
+  const rows = race.results();
+  const awards = race.awards();
+  const fastest = awards.find((a) => a.key === 'fastestLap');
+  for (const r of rows) {
+    // everyone scores for where they ended up; quitting scores nothing
+    r.points = r.out === 'retired' ? 0 : (POINTS[r.pos - 1] || 0);
+    r.fastest = !!fastest && fastest.i === r.i;
+    if (r.fastest && r.points > 0) r.points += FASTEST_LAP_BONUS;
 
-function useItem(room, player) {
-  if (!player.item || player.finished || room.status !== 'racing') return;
-  const now = Date.now();
-  const item = player.item;
-  player.item = null;
-
-  switch (item) {
-    case 'boost':
-      player.boostUntil = now + 2200;
-      player.lastEvent = 'boost';
-      break;
-    case 'shield':
-      player.shieldUntil = now + 5000;
-      player.lastEvent = 'shield';
-      break;
-    case 'cab': {
-      // Drop a CAB meeting hazard behind the car
-      const hx = player.x - Math.cos(player.angle) * 55;
-      const hy = player.y - Math.sin(player.angle) * 55;
-      room.hazards.push({
-        id: Math.random().toString(36).slice(2, 8),
-        x: hx, y: hy,
-        ownerId: player.id,
-        bornAt: now,
-        expiresAt: now + 30000,
-      });
-      player.lastEvent = 'cab';
-      break;
-    }
-    case 'lock': {
-      // Transport Lock: freeze the nearest car ahead of you
-      const myScore = scoreOf(player);
-      let target = null;
-      let bestGap = Infinity;
-      room.players.forEach((p) => {
-        if (p.id === player.id || p.finished) return;
-        const gap = scoreOf(p) - myScore;
-        if (gap > 0 && gap < bestGap) { bestGap = gap; target = p; }
-      });
-      if (target && target.shieldUntil < now) {
-        target.lockedUntil = now + 1600;
-        target.lastEvent = 'locked';
-      }
-      player.lastEvent = 'lock';
-      break;
-    }
-    case 'oops': {
-      // OOPS! Everyone ahead of you spins out
-      const myScore = scoreOf(player);
-      room.players.forEach((p) => {
-        if (p.id === player.id || p.finished) return;
-        if (scoreOf(p) > myScore && p.shieldUntil < now) {
-          p.spinUntil = now + 1300;
-          p.lastEvent = 'spin';
-        }
-      });
-      player.lastEvent = 'oops';
-      break;
-    }
-  }
-}
-
-// Race progress: sectors hit + fractional progress toward the next sector.
-function scoreOf(p) {
-  let a = p._u * SECTORS - ((p.nextSector - 1 + SECTORS) % SECTORS);
-  a = ((a % SECTORS) + SECTORS) % SECTORS;
-  if (a > 2) a = 0; // driving backwards / cutting — no partial credit
-  return p.cpCount + Math.min(1, a);
-}
-
-// ---------------------------------------------------------------------------
-// Simulation tick
-// ---------------------------------------------------------------------------
-function tick(room) {
-  const now = Date.now();
-
-  if (room.status === 'countdown' && now >= room.countdownEnd) {
-    room.status = 'racing';
-    room.raceStart = now;
+    const key = r.name.toLowerCase();
+    const st = room.standings.get(key) || { name: r.name, bot: r.bot, carId: r.carId, points: 0, wins: 0, races: 0 };
+    st.carId = r.carId;
+    st.points += r.points;
+    st.races++;
+    if (r.pos === 1) st.wins++;
+    room.standings.set(key, st);
   }
 
-  const racing = room.status === 'racing';
-  const map = mapOf(room);
-  const players = [...room.players.values()];
-
-  for (const p of players) {
-    if (p.retired) continue; // exited the race — car is off the track
-    const spinning = p.spinUntil > now;
-    const locked = p.lockedUntil > now;
-    const canDrive = racing && !p.finished && !spinning && !locked;
-
-    // --- throttle / brake ---
-    if (canDrive) {
-      if (p.input.up) p.speed += ACCEL * DT;
-      else if (p.input.down) p.speed -= BRAKE * DT;
-    }
-    // friction
-    p.speed -= p.speed * FRICTION * DT;
-    if (Math.abs(p.speed) < 2 && !p.input.up && !p.input.down) p.speed = 0;
-
-    // clamp
-    const near = RTMaps.closest(map.path, p.x, p.y);
-    p._u = near.u;
-    const onTrack = near.dist <= map.halfWidth;
-    let maxSpd = p.boostUntil > now ? BOOST_SPEED : MAX_SPEED;
-    if (!onTrack) maxSpd = OFFTRACK_MAX;
-    if (p.boostUntil > now && canDrive) p.speed = Math.max(p.speed, maxSpd * 0.85);
-    p.speed = Math.min(maxSpd, Math.max(REVERSE_MAX, p.speed));
-
-    // --- steering ---
-    if (canDrive && Math.abs(p.speed) > 20) {
-      const speedFactor = Math.min(1, Math.abs(p.speed) / 220);
-      const dir = p.speed >= 0 ? 1 : -1;
-      if (p.input.left) p.angle -= TURN_RATE * speedFactor * DT * dir;
-      if (p.input.right) p.angle += TURN_RATE * speedFactor * DT * dir;
-    }
-    if (spinning) {
-      p.angle += 10 * DT;
-      p.speed *= 0.94;
-    }
-
-    // --- integrate ---
-    p.x += Math.cos(p.angle) * p.speed * DT;
-    p.y += Math.sin(p.angle) * p.speed * DT;
-
-    // keep inside world bounds
-    p.x = Math.min(1590, Math.max(10, p.x));
-    p.y = Math.min(990, Math.max(10, p.y));
-
-    if (!racing || p.finished) continue;
-
-    // --- checkpoints & laps (sequential arc-length sectors) ---
-    const s = Math.floor(p._u * SECTORS) % SECTORS;
-    if (s === p.nextSector) {
-      p.nextSector = (s + 1) % SECTORS;
-      p.cpCount++;
-      if (s === 0 && p.cpCount % SECTORS === 0) {
-        p.lap = p.cpCount / SECTORS;
-        if (p.lap >= TOTAL_LAPS) {
-          p.finished = true;
-          p.finishTime = now;
-          p.lastEvent = 'finish';
-          if (!room.firstFinishAt) room.firstFinishAt = now;
-        }
-      }
-    }
-
-    // --- item pads ---
-    for (const pad of room.pads) {
-      if (!pad.active) {
-        if (now >= pad.respawnAt) pad.active = true;
-        continue;
-      }
-      if (!p.item && Math.hypot(p.x - pad.x, p.y - pad.y) < 48) {
-        pad.active = false;
-        pad.respawnAt = now + 4000;
-        p.item = rollItem(p, room);
-        p.lastEvent = 'pickup';
-      }
-    }
-
-    // --- hazards (CAB meetings) ---
-    for (const hz of room.hazards) {
-      if (hz.ownerId === p.id && now - hz.bornAt < 1200) continue;
-      if (p.shieldUntil > now || p.spinUntil > now) continue;
-      if (Math.hypot(p.x - hz.x, p.y - hz.y) < CAR_RADIUS + 24) {
-        p.spinUntil = now + 1400;
-        p.speed *= 0.2;
-        p.lastEvent = 'cabbed';
-        hz.expiresAt = 0; // consume
-      }
-    }
-  }
-
-  room.hazards = room.hazards.filter((hz) => hz.expiresAt > now);
-
-  // --- car vs car collisions ---
-  const active = players.filter((p) => !p.retired);
-  for (let i = 0; i < active.length; i++) {
-    for (let j = i + 1; j < active.length; j++) {
-      const a = active[i];
-      const b = active[j];
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const d = Math.hypot(dx, dy);
-      const minD = CAR_RADIUS * 2;
-      if (d > 0 && d < minD) {
-        const push = (minD - d) / 2;
-        const nx = dx / d;
-        const ny = dy / d;
-        a.x -= nx * push; a.y -= ny * push;
-        b.x += nx * push; b.y += ny * push;
-        const avg = (a.speed + b.speed) / 2;
-        a.speed = a.speed * 0.6 + avg * 0.3;
-        b.speed = b.speed * 0.6 + avg * 0.3;
-      }
-    }
-  }
-
-  // --- ranking ---
-  const order = players
-    .slice()
-    .sort((a, b) => {
-      if (a.retired !== b.retired) return a.retired ? 1 : -1;
-      if (a.finished && b.finished) return a.finishTime - b.finishTime;
-      if (a.finished) return -1;
-      if (b.finished) return 1;
-      return scoreOf(b) - scoreOf(a);
-    });
-  order.forEach((p, i) => { p.rank = i + 1; });
-
-  // --- broadcast ---
-  io.to(room.code).emit('state', {
-    status: room.status,
-    mapId: room.mapId,
-    countdownEnd: room.countdownEnd,
-    raceStart: room.raceStart,
-    now,
-    totalLaps: TOTAL_LAPS,
-    players: players.map((p) => {
-      const ev = p.lastEvent;
-      p.lastEvent = null;
-      return {
-        id: p.id, name: p.name, carId: p.carId,
-        x: Math.round(p.x * 10) / 10,
-        y: Math.round(p.y * 10) / 10,
-        angle: Math.round(p.angle * 1000) / 1000,
-        speed: Math.round(p.speed),
-        item: p.item,
-        lap: p.lap,
-        rank: p.rank,
-        finished: p.finished,
-        retired: p.retired,
-        boost: p.boostUntil > now,
-        spin: p.spinUntil > now,
-        locked: p.lockedUntil > now,
-        shield: p.shieldUntil > now,
-        event: ev,
-      };
-    }),
-    hazards: room.hazards.map((h) => ({ id: h.id, x: h.x, y: h.y })),
-    pads: room.pads.map((pd) => ({ id: pd.id, x: pd.x, y: pd.y, active: pd.active })),
+  const broken = records.submit({ mapId: race.map.id, laps: race.laps, mode: race.mode }, rows);
+  io.to(room.code).emit('raceOver', {
+    mapId: race.map.id,
+    mode: race.mode,
+    laps: race.laps,
+    raceNo: room.raceNo,
+    results: rows,
+    awards,
+    records: broken,
+    standings: standingsList(room),
   });
-
-  checkRaceEnd(room);
+  broadcastLobby(room);
 }
 
 // ---------------------------------------------------------------------------
 // Socket handlers
 // ---------------------------------------------------------------------------
+function ctx(socket) {
+  const room = rooms.get(socket.data.roomCode);
+  return room ? { room, player: room.players.get(socket.id) } : {};
+}
+
 io.on('connection', (socket) => {
-  console.log(`[conn] ${socket.id}`);
-  socket.on('createRoom', ({ name }, cb) => {
-    console.log(`[createRoom] ${socket.id} name=${name}`);
+  const ack = (cb, payload) => { if (typeof cb === 'function') cb(payload); };
+
+  socket.on('createRoom', (msg, cb) => {
     if (socket.data.roomCode) removePlayer(socket);
-    const room = createRoom(socket, name);
-    cb({ ok: true, code: room.code });
+    const room = createRoom(socket, msg && msg.name);
+    console.log(`[room ${room.code}] created by ${room.players.get(socket.id).name}`);
+    ack(cb, { ok: true, code: room.code });
     broadcastLobby(room);
   });
 
-  socket.on('joinRoom', ({ code, name }, cb) => {
-    console.log(`[joinRoom] ${socket.id} code=${code} name=${name}`);
-    const room = rooms.get(String(code || '').trim().toUpperCase());
-    if (!room) return cb({ ok: false, error: 'Room not found' });
-    if (room.players.size >= MAX_PLAYERS) return cb({ ok: false, error: 'Room is full (8 max)' });
-    if (room.status !== 'lobby' && room.status !== 'finished') {
-      return cb({ ok: false, error: 'Race in progress — try again shortly' });
-    }
+  socket.on('joinRoom', (msg, cb) => {
+    const room = rooms.get(String((msg && msg.code) || '').trim().toUpperCase());
+    if (!room) return ack(cb, { ok: false, error: 'Room not found' });
+    if (room.players.size >= MAX_PLAYERS) return ack(cb, { ok: false, error: 'Room is full (8 max)' });
     if (socket.data.roomCode) removePlayer(socket);
-    addPlayer(room, socket, name);
-    cb({ ok: true, code: room.code });
+    addPlayer(room, socket, msg.name);
+    console.log(`[room ${room.code}] ${room.players.get(socket.id).name} joined`);
+    ack(cb, { ok: true, code: room.code });
     broadcastLobby(room);
+    // arriving mid-race: hand over what is needed to spectate
+    if (room.race) socket.emit('raceStart', { ...room.race.staticInfo(), spectate: true });
   });
 
   socket.on('leaveRoom', () => removePlayer(socket));
 
-  socket.on('selectCar', ({ carId }) => {
-    console.log(`[selectCar] ${socket.id} carId=${carId}`);
-    const room = rooms.get(socket.data.roomCode);
-    if (!room || room.status === 'racing' || room.status === 'countdown') return;
-    const p = room.players.get(socket.id);
-    if (!p) return;
-    carId = Number(carId);
+  socket.on('selectCar', (msg) => {
+    const { room, player } = ctx(socket);
+    if (!room || !player || room.status !== 'lobby') return;
+    const carId = Number(msg && msg.carId);
     if (!CARS.some((c) => c.id === carId)) return;
-    const taken = [...room.players.values()].some((o) => o.id !== p.id && o.carId === carId);
-    if (taken) return;
-    p.carId = carId;
-    broadcastLobby(room);
-  });
-
-  socket.on('selectMap', ({ mapId }) => {
-    const room = rooms.get(socket.data.roomCode);
-    if (!room || socket.id !== room.hostId) return;
-    if (room.status === 'racing' || room.status === 'countdown') return;
-    mapId = Number(mapId);
-    if (!RTMaps.MAPS.some((m) => m.id === mapId)) return;
-    room.mapId = mapId;
+    if ([...room.players.values()].some((o) => o.id !== player.id && o.carId === carId)) return;
+    player.carId = carId;
     broadcastLobby(room);
   });
 
   socket.on('toggleReady', () => {
-    const room = rooms.get(socket.data.roomCode);
-    if (!room || (room.status !== 'lobby' && room.status !== 'finished')) return;
-    const p = room.players.get(socket.id);
-    if (!p) return;
-    p.ready = !p.ready;
+    const { room, player } = ctx(socket);
+    if (!room || !player || room.status !== 'lobby') return;
+    player.ready = !player.ready;
+    broadcastLobby(room);
+  });
+
+  socket.on('settings', (patch) => {
+    const { room } = ctx(socket);
+    if (!room || socket.id !== room.hostId || room.status !== 'lobby' || !patch) return;
+    const s = room.settings;
+    if (patch.mapId !== undefined && RTMaps.MAPS.some((m) => m.id === Number(patch.mapId))) s.mapId = Number(patch.mapId);
+    if (patch.laps !== undefined && LAP_CHOICES.includes(Number(patch.laps))) s.laps = Number(patch.laps);
+    if (patch.mode === 'race' || patch.mode === 'elimination') s.mode = patch.mode;
+    if (patch.chaos !== undefined) s.chaos = !!patch.chaos;
+    if (patch.bots !== undefined) s.bots = Math.max(0, Math.min(MAX_PLAYERS - 1, Number(patch.bots) | 0));
+    if (patch.botSkill !== undefined && SKILLS[patch.botSkill]) s.botSkill = patch.botSkill;
+    broadcastLobby(room);
+  });
+
+  socket.on('resetStandings', () => {
+    const { room } = ctx(socket);
+    if (!room || socket.id !== room.hostId || room.status !== 'lobby') return;
+    room.standings.clear();
+    room.raceNo = 0;
     broadcastLobby(room);
   });
 
   socket.on('startRace', () => {
-    const room = rooms.get(socket.data.roomCode);
-    if (!room || socket.id !== room.hostId) return;
-    if (room.status === 'racing' || room.status === 'countdown') return;
-    const players = [...room.players.values()];
-    const othersReady = players.filter((p) => p.id !== room.hostId).every((p) => p.ready);
-    if (!othersReady) return;
+    const { room } = ctx(socket);
+    if (!room || socket.id !== room.hostId || room.status !== 'lobby') return;
+    const others = [...room.players.values()].filter((p) => p.id !== room.hostId);
+    if (!others.every((p) => p.ready)) return;
     startRace(room);
   });
 
   socket.on('input', (input) => {
-    const room = rooms.get(socket.data.roomCode);
-    if (!room) return;
-    const p = room.players.get(socket.id);
-    if (!p) return;
-    p.input = {
-      up: !!input.up, down: !!input.down,
-      left: !!input.left, right: !!input.right,
-    };
+    const { room } = ctx(socket);
+    if (room && room.race) room.race.setInput(socket.id, input);
   });
-
-  socket.on('exitRace', () => {
-    const room = rooms.get(socket.data.roomCode);
-    if (!room) return;
-    const p = room.players.get(socket.id);
-    if (!p) return;
-    if (room.status !== 'racing' || p.finished) return;
-    console.log(`[exitRace] ${socket.id}`);
-    p.finished = true;
-    p.retired = true;
-    p.finishTime = Date.now();
-    p.speed = 0;
-    p.item = null;
-  });
-
   socket.on('useItem', () => {
-    const room = rooms.get(socket.data.roomCode);
-    if (!room) return;
-    const p = room.players.get(socket.id);
-    if (!p) return;
-    useItem(room, p);
+    const { room } = ctx(socket);
+    if (room && room.race) room.race.useItem(socket.id);
+  });
+  socket.on('honk', () => {
+    const { room } = ctx(socket);
+    if (room && room.race) room.race.honk(socket.id);
+  });
+  socket.on('resetCar', () => {
+    const { room } = ctx(socket);
+    if (room && room.race) room.race.resetCar(socket.id);
+  });
+  socket.on('exitRace', () => {
+    const { room } = ctx(socket);
+    if (room && room.race) room.race.retire(socket.id);
   });
 
-  socket.on('disconnect', (reason) => {
-    console.log(`[disconnect] ${socket.id} reason=${reason}`);
-    removePlayer(socket);
-  });
+  socket.on('disconnect', () => removePlayer(socket));
 });
 
 server.listen(PORT, () => {
   console.log(`Rev-Trac Racer running at http://localhost:${PORT}`);
+  for (const list of Object.values(os.networkInterfaces())) {
+    for (const ni of list || []) {
+      if (ni.family === 'IPv4' && !ni.internal) console.log(`  colleagues on your network: http://${ni.address}:${PORT}`);
+    }
+  }
 });

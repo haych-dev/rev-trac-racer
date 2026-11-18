@@ -1,3 +1,5 @@
 node_modules/
 npm-debug.log*
 .DS_Store
+# hall-of-fame records are per-deployment
+data/

@@ -7,97 +7,144 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <!-- HOME SCREEN -->
+  <!-- HOME -->
   <div id="screen-home" class="screen active">
-    <div class="panel">
-      <div class="logo">
-        <svg class="logo-chevrons" viewBox="0 0 155 100" aria-hidden="true">
-          <path d="M36 21 L70 50 L36 79" fill="none" stroke="#ef4d57" stroke-width="24"
-                stroke-linecap="round" stroke-linejoin="round" opacity="0.30" transform="scale(0.86)" transform-origin="53 50"/>
-          <path d="M58 19 L94 50 L58 81" fill="none" stroke="#ef4d57" stroke-width="25"
-                stroke-linecap="round" stroke-linejoin="round" opacity="0.55" transform="scale(0.93)" transform-origin="76 50"/>
-          <path d="M80 17 L118 50 L80 83" fill="none" stroke="#ef4d57" stroke-width="26"
-                stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <h1>REV-TRAC <em>RACER</em></h1>
+    <div class="home-wrap">
+      <div class="panel home-main">
+        <div class="logo">
+          <svg class="logo-chevrons" viewBox="0 0 155 100" aria-hidden="true">
+            <path d="M36 21 L70 50 L36 79" fill="none" stroke="#ef4d57" stroke-width="24"
+                  stroke-linecap="round" stroke-linejoin="round" opacity="0.30" transform="scale(0.86)" transform-origin="53 50"/>
+            <path d="M58 19 L94 50 L58 81" fill="none" stroke="#ef4d57" stroke-width="25"
+                  stroke-linecap="round" stroke-linejoin="round" opacity="0.55" transform="scale(0.93)" transform-origin="76 50"/>
+            <path d="M80 17 L118 50 L80 83" fill="none" stroke="#ef4d57" stroke-width="26"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <h1>REV-TRAC <em>RACER</em></h1>
+        </div>
+        <p class="tagline">Race your changes to production. Drift, draft, and sabotage your colleagues on the way.</p>
+
+        <label for="name-input">Driver name</label>
+        <input id="name-input" maxlength="16" placeholder="e.g. Basis Bandit" autocomplete="off" />
+
+        <button id="btn-create" class="btn primary">Create Room</button>
+        <div class="divider"><span>or join a room</span></div>
+        <div class="join-row">
+          <input id="code-input" maxlength="4" placeholder="CODE" autocomplete="off" />
+          <button id="btn-join" class="btn">Join</button>
+        </div>
+        <p id="home-error" class="error"></p>
+
+        <div class="howto">
+          <h3>Controls</h3>
+          <div class="keys">
+            <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows<span>drive</span></div>
+            <div><kbd>Shift</kbd> hold in a corner<span>drift — release for a mini-turbo</span></div>
+            <div><kbd>Space</kbd><span>use powerup</span></div>
+            <div><kbd>H</kbd> horn &nbsp; <kbd>R</kbd> back on track &nbsp; <kbd>M</kbd> sound &nbsp; <kbd>Esc</kbd> exit</div>
+          </div>
+          <p class="tip">Tuck in behind another car to slipstream. Hit the red chevrons for a boost. Avoid the oil.</p>
+        </div>
       </div>
-      <p class="tagline">Race your changes to production. First one through go-live wins.</p>
 
-      <label for="name-input">Driver name</label>
-      <input id="name-input" maxlength="16" placeholder="e.g. Basis Bandit" autocomplete="off" />
-
-      <button id="btn-create" class="btn primary">Create Room</button>
-
-      <div class="divider"><span>or join a room</span></div>
-
-      <div class="join-row">
-        <input id="code-input" maxlength="4" placeholder="CODE" autocomplete="off" />
-        <button id="btn-join" class="btn">Join</button>
-      </div>
-      <p id="home-error" class="error"></p>
-
-      <div class="howto">
+      <div class="panel home-side">
+        <h3>Hall of Fame</h3>
+        <div id="hof-drivers" class="hof"></div>
+        <h3>Lap records</h3>
+        <div id="hof-tracks" class="hof"></div>
         <h3>Powerups</h3>
-        <ul>
-          <li><b class="c-boost">&#10095;&#10095;&#10095; Chevron Boost</b> — hit warp speed for a couple of seconds</li>
-          <li><b class="c-cab">&#128203; CAB Meeting</b> — drop it behind you; whoever hits it gets stuck in review (spin out)</li>
-          <li><b class="c-lock">&#128274; Transport Lock</b> — freeze the car ahead of you</li>
-          <li><b class="c-shield">&#9889; Emergency Change</b> — shield that skips the red tape (5s immunity)</li>
-          <li><b class="c-oops">&#128165; OOPS!</b> — everyone ahead of you spins out</li>
-        </ul>
-        <p class="controls">Drive with <kbd>WASD</kbd> / arrow keys &middot; use item with <kbd>Space</kbd></p>
+        <ul id="item-list" class="item-list"></ul>
       </div>
     </div>
   </div>
 
-  <!-- LOBBY SCREEN -->
+  <!-- LOBBY -->
   <div id="screen-lobby" class="screen">
-    <div class="panel wide">
+    <div class="panel lobby">
       <div class="lobby-head">
-        <h2>Lobby</h2>
-        <div class="room-code">Room code: <span id="lobby-code"></span></div>
+        <h2>Lobby <span id="race-no"></span></h2>
+        <div class="room-code">
+          Room <span id="lobby-code"></span>
+          <button id="btn-copy" class="btn small">Copy invite link</button>
+        </div>
+      </div>
+      <div id="race-banner" class="race-banner" hidden>
+        <span>&#127937; A race is in progress — you're in the next one.</span>
+        <button id="btn-watch" class="btn small primary">Watch it</button>
       </div>
 
-      <h3>Pick the track <span id="map-hint" class="soft-hint"></span></h3>
-      <div id="map-grid" class="map-grid"></div>
-
-      <h3>Pick your car</h3>
-      <div id="car-grid" class="car-grid"></div>
-
-      <h3>Drivers <span id="player-count"></span></h3>
-      <ul id="player-list" class="player-list"></ul>
-
-      <div class="lobby-actions">
-        <button id="btn-ready" class="btn">Ready Up</button>
-        <button id="btn-start" class="btn primary" style="display:none">Start Race</button>
-        <button id="btn-leave" class="btn danger">Leave</button>
+      <div class="lobby-cols">
+        <div class="lobby-left">
+          <h3>Track <span id="map-hint" class="soft-hint"></span></h3>
+          <div id="map-grid" class="map-grid"></div>
+          <h3>Your car</h3>
+          <div id="car-grid" class="car-grid"></div>
+          <div id="car-stats" class="car-stats"></div>
+        </div>
+        <div class="lobby-right">
+          <h3>Race setup <span id="setup-hint" class="soft-hint"></span></h3>
+          <div id="settings" class="settings"></div>
+          <h3>Drivers <span id="player-count" class="soft-hint"></span></h3>
+          <ul id="player-list" class="player-list"></ul>
+          <h3>Championship <button id="btn-reset-standings" class="btn tiny" hidden>reset</button></h3>
+          <div id="standings" class="standings"></div>
+          <div class="lobby-actions">
+            <button id="btn-ready" class="btn">Ready Up</button>
+            <button id="btn-start" class="btn primary" hidden>Start Race</button>
+            <button id="btn-leave" class="btn danger">Leave</button>
+          </div>
+          <p id="lobby-hint" class="hint"></p>
+        </div>
       </div>
-      <p id="lobby-hint" class="hint"></p>
     </div>
   </div>
 
-  <!-- GAME SCREEN -->
+  <!-- GAME -->
   <div id="screen-game" class="screen">
-    <canvas id="game-canvas" width="1600" height="1000"></canvas>
-    <div id="hud">
-      <div id="hud-lap"></div>
-      <div id="hud-pos"></div>
-      <div id="hud-item"></div>
-      <div id="hud-time"></div>
+    <div id="hud-top">
+      <button id="btn-exit-race" class="btn" title="Exit the race (Esc)">&#10005; Exit</button>
+      <div class="pills">
+        <div class="pill"><small>LAP</small><b id="hud-lap">–</b></div>
+        <div class="pill pos"><small>POS</small><b id="hud-pos">–</b></div>
+        <div class="pill"><small>TIME</small><b id="hud-time">0:00.0</b></div>
+        <div class="pill item" id="hud-item-pill"><small>POWERUP · SPACE</small><b id="hud-item">–</b></div>
+      </div>
+      <button id="btn-sound" class="btn" title="Sound (M)">&#128266;</button>
     </div>
-    <button id="btn-exit-race" class="btn" title="Exit the race (Esc)">&#10005; Exit race</button>
-    <div id="countdown"></div>
-    <div id="toast"></div>
+    <div id="game-main">
+      <div id="stage">
+        <div id="stage-inner">
+          <canvas id="game-canvas" width="1600" height="1000"></canvas>
+          <div id="hud-banner"></div>
+          <div id="hud-center"></div>
+          <div id="hud-status"></div>
+        </div>
+      </div>
+      <aside id="side">
+        <div id="hud-elim"></div>
+        <div id="hud-board"></div>
+        <div id="hud-feed"></div>
+        <div class="side-keys">
+          <kbd>Shift</kbd> drift &nbsp;<kbd>Space</kbd> powerup<br>
+          <kbd>H</kbd> horn &nbsp;<kbd>R</kbd> reset &nbsp;<kbd>M</kbd> sound
+        </div>
+      </aside>
+    </div>
   </div>
 
-  <!-- RESULTS SCREEN -->
+  <!-- RESULTS -->
   <div id="screen-results" class="screen">
-    <div class="panel">
-      <h2>&#127937; Race Results</h2>
-      <table id="results-table">
-        <thead><tr><th>#</th><th>Driver</th><th>Car</th><th>Time</th></tr></thead>
+    <div class="panel results">
+      <h2 id="results-title">Race Results</h2>
+      <div id="results-records"></div>
+      <div id="podium" class="podium"></div>
+      <table id="results-table" class="table">
+        <thead><tr><th>#</th><th>Driver</th><th>Car</th><th>Time</th><th>Best lap</th><th>Pts</th></tr></thead>
         <tbody></tbody>
       </table>
+      <div id="awards" class="awards"></div>
+      <h3>Championship</h3>
+      <div id="results-standings" class="standings"></div>
       <div class="lobby-actions">
         <button id="btn-back-lobby" class="btn primary">Back to Lobby</button>
       </div>
@@ -107,6 +154,9 @@
   <script src="/socket.io/socket.io.js"></script>
   <script src="maps.js"></script>
   <script src="cars.js"></script>
-  <script src="game.js"></script>
+  <script src="items.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/main.js"></script>
 </body>
 </html>

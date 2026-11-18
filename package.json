@@ -1,10 +1,11 @@
 {
   "name": "rev-trac-racer",
-  "version": "1.0.0",
-  "description": "Rev-Trac Racer - top-down multiplayer racing game with Rev-Trac themed powerups",
+  "version": "2.0.0",
+  "description": "Rev-Trac Racer - a chaotic top-down multiplayer racing game with Rev-Trac themed powerups",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node test/validate-maps.js && node test/sim.js && node test/e2e.js"
   },
   "dependencies": {
     "express": "^4.19.2",

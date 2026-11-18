@@ -1,92 +1,167 @@
 # Rev-Trac Racer 🏁
 
-A top-down multiplayer racing game where you race your changes to production.
-Create a room, share the 4-letter code with up to 7 colleagues, pick a car, and go.
+A chaotic top-down multiplayer racing game. Race your changes to production —
+drift, draft, and sabotage up to seven colleagues (or AI drivers) on the way.
 
 ## Quick start
 
 ```bash
 npm install
+```
+
+```bash
 npm start
 ```
 
-Then open http://localhost:3000 (or set `PORT=xxxx` to run on another port).
-Everyone racing must be able to reach the same server — on a LAN, share
-`http://<your-ip>:3000`.
+Open http://localhost:3000. The server prints the address colleagues on your
+network can use. Set `PORT` to run somewhere else.
+
+Create a room, hit **Copy invite link**, and send it round. No accounts, no
+build step.
 
 ## How to play
 
-| Action | Keys |
+| | |
 |---|---|
-| Accelerate / brake | `W`/`S` or `↑`/`↓` |
-| Steer | `A`/`D` or `←`/`→` |
-| Use powerup | `Space` |
+| `W` `A` `S` `D` / arrows | drive |
+| `Shift` (hold in a corner) | drift — release for a mini-turbo |
+| `Space` | use your powerup |
+| `H` | horn |
+| `R` | put the car back on track (small time penalty) |
+| `M` | cycle sound: everything → effects only → mute |
+| `Esc` | leave the race |
 
-Races are 3 laps. Stay on the asphalt — grass is slow. Drive through the
-**?** boxes to grab a powerup.
+Things worth knowing:
+
+- **Drifting charges a boost.** Hold a drift ~0.7s for blue sparks, ~1.5s for
+  orange; release to fire it.
+- **Slipstream.** Tuck in close behind another car for extra top speed.
+- **Red chevrons are boost pads.** Oil makes you slide. Black ice is black ice.
+- **Grass is slow** — unless you are mid Chevron Boost, which can cut corners.
+- **The points leader starts at the back** of the next grid.
 
 ## Powerups
 
-| Powerup | Effect |
-|---|---|
-| ❯❯❯ **Chevron Boost** | Warp speed for ~2 seconds |
-| 📋 **CAB Meeting** | Drops a hazard behind you — whoever hits it gets stuck in review (spin out) |
-| 🔒 **Transport Lock** | Freezes the car directly ahead of you |
-| ⚡ **Emergency Change** | 5-second shield — skip the red tape, immune to everything |
-| 💥 **OOPS!** | Everyone ahead of you spins out |
+Grab a **?** box. Drivers further back roll better items.
 
-Racers near the back get better odds on Boost and OOPS!
+| | Powerup | Effect |
+|---|---|---|
+| ❯❯❯ | Chevron Boost | Warp speed for two seconds |
+| 📋 | CAB Meeting | Drop it behind you — whoever hits it is stuck in review |
+| 🔒 | Transport Lock | Locks the car ahead in place |
+| ⚡ | Emergency Change | Six seconds of total immunity |
+| 💥 | OOPS! | Everyone ahead of you spins out |
+| 🚀 | Rollback Rocket | Homing rocket that hunts the car ahead |
+| 🔄 | Retrofit | Swap places with the car ahead |
+| 🧊 | Change Freeze | Everyone else drives on ice |
+| 🐛 | Regression Bug | Inverts everyone else's steering |
+| 🖋️ | Undocumented Change | Splatters ink across rival screens |
+| 🚛 | Mass Transport | Grow huge and flatten anything you touch |
+| 🤖 | Automation | Four seconds of flawless autopilot at full boost |
+
+## Chaos events
+
+With chaos on (the default), something goes wrong every 15–25 seconds:
+**Change Freeze** (the whole track ices over), **Prod Outage** (lights out —
+headlights only), **CAB in Session** (meetings rain onto the track),
+**Regression** (everyone's steering inverts), **Hypercare** (everything is
+faster), **Emergency Release**, **Go-Live Bonus**, and the **Surprise Audit**
+that stops whoever is leading.
+
+## Modes and the championship
+
+- **Grand Prix** — 1 to 12 laps. Points for every position
+  (15 · 12 · 10 · 8 · 6 · 5 · 4 · 3), +1 for fastest lap.
+- **Elimination** — every 14 seconds the car in last place is decommissioned.
+  Last one running wins.
+
+Points accumulate across races in a room, so a session is a championship.
+After each race there are awards (Fastest Lap, Release Wrecker, CAB Magnet,
+Drift King…). Lap records and all-time wins are kept in `data/records.json`
+and shown in the **Hall of Fame** on the home screen.
+
+Short of people? The host can add up to seven **AI drivers** at three skill
+levels. Late arrivals can join a room mid-race and spectate until the next one.
 
 ## Tracks
 
-The host picks the track in the lobby:
+| Track | Theme | |
+|---|---|---|
+| Go-Live GP | meadow | ●○○○○ The classic circuit |
+| Prod Speedway | neon night | ●○○○○ A flat-out tri-oval |
+| Transport Twister | desert | ●●○○○ A ring with two chicanes |
+| Sandbox Scramble | beach | ●●○○○ Three sweeping esses |
+| Hotfix Hairpin | lava | ●●●○○ Sweepers into a deep hairpin |
+| Audit Trail | autumn | ●●●○○ A staircase of switchbacks |
+| Integration Esses | snow | ●●●●○ A weave with black ice |
+| Double Downtime | datacenter | ●●●●● Two opposing hairpin fingers |
+| Merge Conflict | the void | ●●●●● A figure-8 with a live crossing |
 
-| Track | Character |
-|---|---|
-| **Go-Live GP** | The classic circuit — balanced corners, honest racing |
-| **Transport Twister** | A flowing ring broken up by two nasty chicanes |
-| **Prod Speedway** | A flat-out tri-oval — three corners, zero excuses |
-| **Sandbox Scramble** | A wobbly loop with three sweeping esses |
-| **Hotfix Hairpin** | Sweepers into a deep hairpin — brake or backout |
-| **Integration Esses** | A snaking weave of esses across the whole top half |
-| **Double Downtime** | Two deep hairpin fingers — one down, one up |
-| **Audit Trail** | A staircase of switchbacks — every corner gets reviewed |
+## Cars
 
-Tracks are defined as centerline control-point loops in [public/maps.js](public/maps.js)
-(shared by server and client, smoothed with Chaikin subdivision) — add a new entry there
-and it shows up in the lobby automatically. `node test/validate-maps.js` checks that a
-new track stays in bounds and never overlaps itself.
+Sixteen cars across eight body types. Bodies differ modestly in top speed,
+acceleration, handling, weight (who wins a shunt) and off-road pace — the
+lobby shows the stats. Lap times across bodies are within about 4%.
 
-## Rooms
+## How it is built
 
-- Up to **8 players** per room, each with a unique car from a garage of 16
-- The host picks the track; non-host players ready up; the host starts the race
-- After a race, results are shown and everyone returns to the lobby for a rematch
+```
+server.js            rooms, lobby, championship, socket wiring
+lib/race.js          the simulation: physics, powerups, chaos, laps, results
+lib/bots.js          AI drivers (also drives Automation and victory laps)
+lib/records.js       persistent hall of fame
+public/maps.js       tracks + geometry      ┐
+public/cars.js       car roster + stats     ├ shared by server and client
+public/items.js      powerups, flags, copy  ┘
+public/js/render.js  canvas renderer: themes, scenery, particles
+public/js/audio.js   synthesized sound effects and music (no audio files)
+public/js/main.js    screens, networking, interpolation, HUD
+```
 
-## Tech
+The server is authoritative: it steps the simulation at 60 Hz and broadcasts
+snapshots at 30 Hz; clients interpolate between snapshots ~100 ms in the past.
+`lib/race.js` has no sockets or timers in it, so a full race runs headless in
+milliseconds — that is how the bots and car balance were tuned.
 
-- Node.js + Express + Socket.IO
-- Server-authoritative simulation at 30 Hz (physics, collisions, laps, items)
-- Plain HTML5 Canvas client with position smoothing — no build step
+To add a track, add an entry to `public/maps.js` (control points are smoothed
+automatically; item rows, boost pads and oil are placed for you) and run
+`node test/validate-maps.js`.
 
 ## Tests
 
-Run the server with quick 1-lap races, then the bot harness:
-
 ```bash
-PORT=4100 LAPS=1 node server.js
+npm test
 ```
 
+- `test/validate-maps.js` — every track stays in bounds and never overlaps itself
+- `test/sim.js` — headless races on every track, both modes, every powerup,
+  car balance, determinism
+- `test/e2e.js` — spawns a real server and walks the room lifecycle over sockets
+
+## Hosting
+
+Rooms and races live in server memory and players hold a WebSocket open, so
+host it on something long-running (a VM, a container, an office machine) rather
+than a serverless platform. One process comfortably runs many rooms.
+
+### Deploying to the VPS
+
+Production target is the Hostinger VPS `srv1964127` (145.79.11.91), as the
+Docker Compose project `rev-trac-racer` in `/docker/rev-trac-racer`, behind the
+box's shared Traefik at https://racer.srv1964127.hstgr.cloud.
+
 ```bash
-node test/bots.js http://localhost:4100 8 0
+DEPLOY_KEY=~/.ssh/<key> ./deploy.sh
 ```
 
-(the last argument is the map id, 0–7)
+`DEPLOY_KEY` is an SSH key the box accepts for `root`. The script ships the
+committed `HEAD` with `git archive`, rebuilds the image on the box, restarts
+the container and waits for the site to answer. Anyone mid-race is dropped.
+The hall of fame lives in the `racer-data` Docker volume and survives deploys.
 
-```bash
-node test/capacity.js http://localhost:4100
-```
+`*.srv1964127.hstgr.cloud` already resolves to the box. To serve it on another
+hostname, point that name's A record at 145.79.11.91 first, then change the
+`Host(...)` rule in `docker-compose.vps.yml` and redeploy (Traefik needs the
+name to resolve before it can issue the certificate).
 
-`test/bots.js` runs a full race with N bot drivers (join → ready → race →
-item pickup/use → finish). `test/capacity.js` verifies the 8-player cap and
-mid-race join rejection.
+To try the container locally: `docker build -t rev-trac-racer . && docker run --rm -p 3000:3000 rev-trac-racer`.
