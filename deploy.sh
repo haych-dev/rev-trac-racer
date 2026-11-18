@@ -26,9 +26,11 @@ git archive --format=tar HEAD | "${SSH[@]}" "set -e; rm -rf $DIR.new; mkdir -p $
 echo "==> building and restarting"
 "${SSH[@]}" "cd $DIR && docker compose -f docker-compose.vps.yml up -d --build"
 
+# On a first deploy Traefik serves a self-signed certificate for a few seconds
+# while Let's Encrypt issues the real one, so failed attempts here are normal.
 echo "==> waiting for $URL"
 for i in $(seq 1 30); do
-  if curl -fsS -o /dev/null "$URL/api/records"; then
+  if curl -fs -o /dev/null "$URL/api/records"; then
     echo "live: $URL"
     exit 0
   fi
