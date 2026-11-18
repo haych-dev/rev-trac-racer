@@ -1,0 +1,9 @@
+node_modules
+.git
+.claude
+data
+test
+README.md
+deploy.sh
+docker-compose.vps.yml
+npm-debug.log*

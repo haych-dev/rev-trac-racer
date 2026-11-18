@@ -1,0 +1,30 @@
+# Rev-Trac Racer on the Hostinger VPS (srv1964127), in /docker/rev-trac-racer.
+# Deploy with `./deploy.sh`. Served at https://racer.srv1964127.hstgr.cloud
+# through the box's shared Traefik (host network, Let's Encrypt HTTP challenge),
+# so no port is published here: Traefik reaches the container on its own IP.
+# `*.srv1964127.hstgr.cloud` already resolves to the box. To use another
+# hostname, point its A record at 145.79.11.91 first, then change the Host rule.
+#
+# One instance only: rooms and races live in this process's memory, and
+# players hold a WebSocket open to it.
+name: rev-trac-racer
+
+services:
+  web:
+    build: .
+    mem_limit: 256m
+    memswap_limit: 256m
+    expose:
+      - "3000"
+    volumes:
+      - racer-data:/app/data   # hall of fame
+    restart: unless-stopped
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.rev-trac-racer.entrypoints=websecure
+      - traefik.http.routers.rev-trac-racer.rule=Host(`racer.srv1964127.hstgr.cloud`)
+      - traefik.http.routers.rev-trac-racer.tls.certresolver=letsencrypt
+      - traefik.http.services.rev-trac-racer.loadbalancer.server.port=3000
+
+volumes:
+  racer-data:
