@@ -21,6 +21,7 @@ const MAX_PLAYERS = 8;
 const MAX_ROOMS = 200;
 const MAX_SOCKETS_PER_IP = 64;
 const COOKIE_MAX_AGE = 157680000; // 5 years, in seconds
+const SNAPSHOT_EVERY_TICKS = 1;   // the simulation ticks at 60 Hz
 const LAP_CHOICES = [1, 3, 5, 8, 12];
 const BOT_NAMES = [
   'Legacy Larry', 'Waterfall Wendy', 'Friday Deploy Fred', 'Spreadsheet Steve',
@@ -30,7 +31,8 @@ const BOT_NAMES = [
 const records = new Records(process.env.RECORDS_FILE || path.join(__dirname, 'data', 'records.json'));
 const store = createStore();
 const profiles = createProfiles(store, { reserved: BOT_NAMES });
-const nameOfPid = (pid) => { const p = profiles.get(pid); return p ? p.name : null; };
+// '' = the profile exists but holds no name; null = no such profile (see Records.summary)
+const nameOfPid = (pid) => { const p = profiles.get(pid); return p ? (p.name || '') : null; };
 
 // ---------------------------------------------------------------------------
 // Rate limits
@@ -325,7 +327,9 @@ function startRace(room) {
       sinceSnap++;
       ticked = true;
     }
-    if (ticked && (sinceSnap >= 2 || race.over)) {
+    // A snapshot per tick (60/s): the shorter the gap between snapshots, the
+    // less each client has to buffer, and that buffer is felt as input lag.
+    if (ticked && (sinceSnap >= SNAPSHOT_EVERY_TICKS || race.over)) {
       sinceSnap = 0;
       io.to(room.code).emit('state', race.snapshot());
     }
@@ -361,11 +365,20 @@ function finishRace(room) {
     room.standings.set(key, st);
   }
 
-  // The hall of fame is keyed by profile; ids are attached here and never sent out.
-  const broken = records.submit(
-    { mapId: race.map.id, laps: race.laps, mode: race.mode },
-    rows.map((r) => ({ ...r, pid: keys.get(r.id).pid })),
-  );
+  // Durable stats. Nothing here came from a client: every field is from the
+  // simulation this process just ran. The hall of fame is keyed by profile;
+  // ids are attached here and never sent out.
+  let hall = { standings: false, records: [] };
+  try {
+    hall = records.submit(
+      { mapId: race.map.id, laps: race.laps, mode: race.mode },
+      rows.map((r) => ({ ...r, pid: keys.get(r.id).pid })),
+      (pid) => !!profiles.get(pid),
+    );
+  } catch (err) {
+    // A hall-of-fame write must never take the race down with it.
+    console.error('[records] failed to record race:', err && err.message);
+  }
   io.to(room.code).emit('raceOver', {
     mapId: race.map.id,
     mode: race.mode,
@@ -373,7 +386,8 @@ function finishRace(room) {
     raceNo: room.raceNo,
     results: rows,
     awards,
-    records: broken,
+    records: hall.records,
+    counted: hall.standings, // did it count toward all-time standings?
     standings: standingsList(room),
   });
   broadcastLobby(room);

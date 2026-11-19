@@ -1,0 +1,13 @@
+[
+  {
+    "date": "2026-11-19",
+    "verb": "redesign",
+    "scope": "home screen (public/index.html #screen-home)",
+    "macrostructure": "Split Studio",
+    "theme": "studied-DNA (source: rev-trac.com)",
+    "nav": "wordmark + one action",
+    "footer": "single line",
+    "enrichment": "hand-built SVG chevrons behind a frosted card",
+    "brief": "Rev-Trac Racer front page, on brand, with a demo request"
+  }
+]

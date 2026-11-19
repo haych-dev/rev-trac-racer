@@ -1,5 +1,6 @@
 /* Rev-Trac Racer — canvas renderer.
- * The world is 1600x1000 units. Everything static about a track (ground,
+ * The world (RTMaps.WORLD) is always fitted whole to the screen, so the
+ * entire track is visible. Everything static about a track (ground,
  * scenery, asphalt, pads, logo) is painted once into an offscreen layer;
  * skid marks accumulate in a second layer; cars, effects and overlays are
  * drawn fresh each frame. */
@@ -9,6 +10,11 @@
   const { THEMES, WORLD, pointAt, closest, mulberry32 } = RTMaps;
   const F = RTItems.FLAGS;
   const W = WORLD.w, H = WORLD.h;
+  // The whole world is always fitted to the screen, so the bigger the world,
+  // the smaller a world unit is drawn. UI holds labels, markers and pop-up
+  // text at a constant size on screen; cars and track furniture are physical
+  // objects and are left at their true size.
+  const UI = W / 1600;
   const TAU = Math.PI * 2;
   const BRAND_RED = '#ef4d57';
   const NAVY = '#1e396b';
@@ -329,9 +335,11 @@
     const rng = mulberry32(555 + map.id * 31);
     const kinds = THEMES[map.theme].scenery;
     const lg = map.logo, lh = lg.w * 0.262;
-    for (let tries = 0; tries < 1400 && items.length < 120; tries++) {
+    // density is per unit of area, so a bigger world gets proportionally more
+    const want = Math.round(120 * UI * UI * 0.8);
+    for (let tries = 0; tries < want * 12 && items.length < want; tries++) {
       const x = 26 + rng() * (W - 52), y = 26 + rng() * (H - 52);
-      const s = 0.75 + rng() * 0.6;
+      const s = (0.75 + rng() * 0.6) * (0.75 + UI * 0.25);
       const kind = kinds[Math.floor(rng() * kinds.length)];
       const r = rng();
       if (closest(map.path, x, y).dist < map.halfWidth + 48) continue;
@@ -367,13 +375,13 @@
       c.stroke();
     } else if (theme.dark) {
       c.fillStyle = theme.ground2;
-      for (let i = 0; i < 26; i++) { c.beginPath(); c.arc(rng() * W, rng() * H, 40 + rng() * 90, 0, TAU); c.fill(); }
+      for (let i = 0; i < 26 * UI * UI; i++) { c.beginPath(); c.arc(rng() * W, rng() * H, 40 + rng() * 90, 0, TAU); c.fill(); }
     } else {
       c.fillStyle = theme.ground2;
       for (let y = 0; y < H; y += 80) c.fillRect(0, y, W, 40);
     }
     c.fillStyle = theme.dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
-    for (let i = 0; i < 520; i++) c.fillRect(rng() * W, rng() * H, 2 + rng() * 3, 2 + rng() * 3);
+    for (let i = 0; i < 520 * UI * UI; i++) c.fillRect(rng() * W, rng() * H, 2 + rng() * 3, 2 + rng() * 3);
   }
 
   function drawTrack(c, map, theme) {
@@ -475,14 +483,14 @@
       c.drawImage(logoImg, lg.x - lg.w / 2, lg.y - lh / 2, lg.w, lh);
       c.restore();
     }
-    c.font = `800 ${Math.round(Math.min(26, lg.w * 0.075))}px ${FONT}`;
+    c.font = `800 ${Math.round(Math.min(26 * UI, lg.w * 0.075))}px ${FONT}`;
     c.textAlign = 'center';
     c.textBaseline = 'middle';
-    c.lineWidth = 4;
+    c.lineWidth = 4 * UI;
     c.strokeStyle = 'rgba(0,0,0,0.35)';
     c.fillStyle = 'rgba(255,255,255,0.8)';
-    c.strokeText(map.name.toUpperCase(), lg.x, lg.y + lh / 2 + 40);
-    c.fillText(map.name.toUpperCase(), lg.x, lg.y + lh / 2 + 40);
+    c.strokeText(map.name.toUpperCase(), lg.x, lg.y + lh / 2 + 40 * UI);
+    c.fillText(map.name.toUpperCase(), lg.x, lg.y + lh / 2 + 40 * UI);
   }
 
   function buildStatic() {
@@ -546,10 +554,10 @@
       if (t.life <= 0) { texts.splice(i, 1); continue; }
       const f = t.life / t.max;
       ctx.globalAlpha = Math.min(1, f * 2.5);
-      ctx.font = `800 ${t.size}px ${FONT}`;
-      ctx.lineWidth = 4;
+      ctx.font = `800 ${Math.round(t.size * UI)}px ${FONT}`;
+      ctx.lineWidth = 4 * UI;
       ctx.strokeStyle = 'rgba(0,0,0,0.7)';
-      const y = t.y - (1 - f) * 34;
+      const y = t.y - (1 - f) * 34 * UI;
       ctx.strokeText(t.str, t.x, y);
       ctx.fillStyle = t.color;
       ctx.fillText(t.str, t.x, y);
@@ -803,10 +811,10 @@
     }
     const icon = (c.f & F.LOCKED) ? '🔒' : (c.f & F.SPIN) ? '💫' : (c.f & F.AUTO) ? '🤖' : (c.f & F.BUG) ? '🐛' : (c.f & F.INK) ? '🖋️' : '';
     if (icon) {
-      ctx.font = `18px ${FONT}`;
+      ctx.font = `${Math.round(18 * UI)}px ${FONT}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(icon, 0, -32 * sc);
+      ctx.fillText(icon, 0, -24 * sc - 10 * UI);
     }
     ctx.restore();
   }
@@ -819,17 +827,19 @@
     if (c.f & F.FINISHED) ctx.globalAlpha = 0.55;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = `${c.me ? '800 15px' : '700 12px'} ${FONT}`;
-    ctx.lineWidth = 3.5;
+    ctx.font = `${c.me ? '800' : '700'} ${Math.round((c.me ? 15 : 12) * UI)}px ${FONT}`;
+    ctx.lineWidth = 3.5 * UI;
     ctx.strokeStyle = 'rgba(0,0,0,0.78)';
-    const ty = 22 * sc + 15;
+    const ty = 22 * sc + 15 * UI;
     ctx.strokeText(c.name, 0, ty);
     ctx.fillStyle = c.me ? '#ffd60a' : c.bot ? 'rgba(255,255,255,0.78)' : '#ffffff';
     ctx.fillText(c.name, 0, ty);
     if (c.me && !(c.f & F.FINISHED)) {
-      const by = -44 * sc - 10 + Math.sin(now * 0.008) * 3;
-      ctx.fillStyle = '#ffd60a'; ctx.strokeStyle = 'rgba(0,0,0,0.75)'; ctx.lineWidth = 2;
-      poly(ctx, [[-8, by - 11], [8, by - 11], [0, by]]); ctx.fill(); ctx.stroke();
+      // "this one is you": sits above the car and any status icon over it
+      const by = -24 * sc - 28 * UI + Math.sin(now * 0.008) * 3 * UI;
+      const a = 8 * UI;
+      ctx.fillStyle = '#ffd60a'; ctx.strokeStyle = 'rgba(0,0,0,0.75)'; ctx.lineWidth = 2 * UI;
+      poly(ctx, [[-a, by - a * 1.4], [a, by - a * 1.4], [0, by]]); ctx.fill(); ctx.stroke();
     }
     ctx.restore();
   }
@@ -856,13 +866,16 @@
       L.fillStyle = g;
       L.beginPath(); L.arc(x / 2, y / 2, r / 2, 0, TAU); L.fill();
     };
+    // lit areas keep their share of the screen as the world grows
+    const L2 = 0.6 + UI * 0.4;
     for (const c of view.cars) {
       if (c.f & F.OUT) continue;
-      hole(c.x, c.y, c.me ? 150 : 95);
+      hole(c.x, c.y, (c.me ? 150 : 95) * L2);
       // headlights
-      hole(c.x + Math.cos(c.a) * (c.me ? 120 : 75), c.y + Math.sin(c.a) * (c.me ? 120 : 75), c.me ? 190 : 110);
+      const reach = (c.me ? 120 : 75) * L2;
+      hole(c.x + Math.cos(c.a) * reach, c.y + Math.sin(c.a) * reach, (c.me ? 190 : 110) * L2);
     }
-    for (const [, x, y] of view.missiles) hole(x, y, 70);
+    for (const [, x, y] of view.missiles) hole(x, y, 70 * L2);
     ctx.drawImage(lightCv, 0, 0, W, H);
   }
 
@@ -870,7 +883,7 @@
     const rng = mulberry32(ink.seed);
     ctx.fillStyle = `rgba(8,8,12,${0.94 * ink.a})`;
     for (let i = 0; i < 8; i++) {
-      const x = 120 + rng() * (W - 240), y = 100 + rng() * (H - 200), r = 65 + rng() * 85;
+      const x = 120 + rng() * (W - 240), y = 100 + rng() * (H - 200), r = (65 + rng() * 85) * UI;
       ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
       for (let j = 0; j < 5; j++) {
         const a = rng() * TAU, d = r * (0.75 + rng() * 0.6);

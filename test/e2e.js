@@ -9,6 +9,7 @@ const path = require('path');
 const fs = require('fs');
 const { io } = require('socket.io-client');
 const { makeProfile, mintProfile, claimName } = require('./helpers/profile.js');
+const RTMaps = require('../public/maps.js');
 
 const PORT = 4100 + Math.floor(Math.random() * 400);
 const URL = `http://localhost:${PORT}`;
@@ -48,6 +49,30 @@ function waitFor(s, ev, pred = () => true, timeout = 60000) {
   });
 }
 const getJson = async (p) => (await fetch(URL + p)).json();
+
+// Steer a client's own car around the track from the snapshots it receives.
+// Returns a function that stops driving.
+function autodrive(s, idx, mapId) {
+  const trackPath = RTMaps.MAPS.find((m) => m.id === mapId).path;
+  let last = '';
+  const onState = (snap) => {
+    if (snap.st !== 'racing') return;
+    const me = snap.p[idx];
+    const near = RTMaps.closest(trackPath, me.x, me.y);
+    const aim = RTMaps.pointAt(trackPath, near.u + (90 + me.v * 0.28) / trackPath.total);
+    const da = RTMaps.angNorm(Math.atan2(aim.y - me.y, aim.x - me.x) - me.a);
+    const input = { u: me.v < 300, l: da < -0.07, r: da > 0.07 };
+    const key = JSON.stringify(input);
+    if (key !== last) { last = key; s.emit('input', input); }
+  };
+  s.on('state', onState);
+  return () => s.off('state', onState);
+}
+// How far round the lap a car is (0..1), from a snapshot.
+const lapFraction = (snap, idx, mapId) => {
+  const p = snap.p[idx];
+  return RTMaps.closest(RTMaps.MAPS.find((m) => m.id === mapId).path, p.x, p.y).u;
+};
 
 async function main() {
   // ---- identity over HTTP -------------------------------------------------
@@ -191,10 +216,13 @@ async function main() {
   await sleep(200);
   check(host.lobby.status === 'lobby' && host.lobby.raceNo === 1, 'room returns to the lobby');
 
+  // ---- hall-of-fame farming guards ------------------------------------------
+  // Race 1 had one driver who moved (the host) and one parked on the grid.
+  check(over.counted === false, 'a race where the second driver never moved is flagged as not counting');
   let rec = await getJson('/api/records');
-  check(rec.drivers.length === 2 && rec.drivers.every((d) => d.races === 1), 'hall of fame tracks human drivers only');
+  check(rec.drivers.length === 0, 'a parked second profile does not put anyone on the all-time board');
 
-  // second race: standings accumulate, elimination mode works over sockets
+  // second race: elimination, and this time two people really drive
   host.emit('settings', { mode: 'elimination', bots: 3, mapId: 0 });
   guest.emit('toggleReady');
   late.emit('toggleReady');
@@ -203,10 +231,22 @@ async function main() {
   host.emit('startRace');
   const info2 = await start2;
   check(info2.mode === 'elimination' && info2.roster.length === 6, 'second race: elimination with 3 humans + 3 bots');
+  const idx2 = (s) => info2.roster.findIndex((r) => r.id === s.id);
+  const stopHost = autodrive(host, idx2(host), 0);
+  const stopGuest = autodrive(guest, idx2(guest), 0);
+  const inRange = (u) => u > 0.15 && u < 0.6; // past the first sector, on lap one
+  const bothDrove = await waitFor(host, 'state', (s) => inRange(lapFraction(s, idx2(host), 0)) && inRange(lapFraction(s, idx2(guest), 0)), 20000).catch(() => null);
+  stopHost(); stopGuest();
+  check(!!bothDrove, 'two clients drive their own cars round the first part of the lap');
   const over2P = waitFor(host, 'raceOver', () => true, 120000);
   for (const s of [host, guest, late]) s.emit('exitRace');
   const over2 = await over2P;
   check(over2.raceNo === 2 && over2.standings.some((s) => s.races === 2), 'standings accumulate across races');
+  check(over2.counted === true, 'a race with two people driving counts toward the hall of fame');
+  rec = await getJson('/api/records');
+  const board = Object.fromEntries(rec.drivers.map((d) => [d.name, d]));
+  check(['Tester', 'Guest', 'Latecomer'].every((nm) => board[nm] && board[nm].races === 1), 'everyone in a counted race gets the race on their record');
+  check(rec.drivers.every((d) => d.wins === 0 && d.podiums === 0 && d.points === 0), 'quitting earns no win, podium or points, however it is classified');
 
   host.emit('resetStandings');
   await sleep(150);

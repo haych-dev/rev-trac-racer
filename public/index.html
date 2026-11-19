@@ -4,65 +4,173 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Rev-Trac Racer</title>
+  <meta name="description" content="Rev-Trac Racer: a top-down multiplayer racing game for up to eight drivers. Race your changes to production." />
+  <link rel="preload" href="fonts/dm-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="tokens.css" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <!-- HOME -->
   <div id="screen-home" class="screen active">
-    <div class="home-wrap">
-      <div class="panel home-main">
-        <div class="logo">
-          <svg class="logo-chevrons" viewBox="0 0 155 100" aria-hidden="true">
-            <path d="M36 21 L70 50 L36 79" fill="none" stroke="#ef4d57" stroke-width="24"
-                  stroke-linecap="round" stroke-linejoin="round" opacity="0.30" transform="scale(0.86)" transform-origin="53 50"/>
-            <path d="M58 19 L94 50 L58 81" fill="none" stroke="#ef4d57" stroke-width="25"
-                  stroke-linecap="round" stroke-linejoin="round" opacity="0.55" transform="scale(0.93)" transform-origin="76 50"/>
-            <path d="M80 17 L118 50 L80 83" fill="none" stroke="#ef4d57" stroke-width="26"
-                  stroke-linecap="round" stroke-linejoin="round"/>
+    <header class="masthead">
+      <div class="wrap masthead__row">
+        <span class="brand">
+          <svg class="brand__mark" viewBox="0 0 155 100" aria-hidden="true">
+            <path class="chev chev--1" d="M36 21 L70 50 L36 79" transform="scale(0.86)" transform-origin="53 50"/>
+            <path class="chev chev--2" d="M58 19 L94 50 L58 81" transform="scale(0.93)" transform-origin="76 50"/>
+            <path class="chev chev--3" d="M80 17 L118 50 L80 83"/>
           </svg>
-          <h1>REV-TRAC <em>RACER</em></h1>
-        </div>
-        <p class="tagline">Race your changes to production. Drift, draft, and sabotage your colleagues on the way.</p>
+          <span>Rev-Trac <b>Racer</b></span>
+        </span>
+        <a class="btn inline masthead__cta" href="#demo" aria-label="Request a demo"><span class="masthead__long">Request a&nbsp;</span>demo</a>
+      </div>
+    </header>
 
-        <label for="name-input">Driver name</label>
-        <div class="name-row">
-          <input id="name-input" maxlength="16" placeholder="e.g. Basis Bandit" autocomplete="off" />
-          <button id="btn-claim" class="btn">Save</button>
-        </div>
-        <p id="name-status" class="hint"></p>
-
-        <!-- Everything below stays disabled until a name is saved. The code
-             field too: its Enter key joins directly, so leaving it live would
-             be a way around the gate. -->
-        <button id="btn-create" class="btn primary" disabled>Create Room</button>
-        <div class="divider"><span>or join a room</span></div>
-        <div class="join-row">
-          <input id="code-input" maxlength="4" placeholder="CODE" autocomplete="off" disabled />
-          <button id="btn-join" class="btn" disabled>Join</button>
-        </div>
-        <p id="home-error" class="error"></p>
-
-        <div class="howto">
-          <h3>Controls</h3>
-          <div class="keys">
-            <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows<span>drive</span></div>
-            <div><kbd>Shift</kbd> hold in a corner<span>drift — release for a mini-turbo</span></div>
-            <div><kbd>Space</kbd><span>use powerup</span></div>
-            <div><kbd>H</kbd> horn &nbsp; <kbd>R</kbd> back on track &nbsp; <kbd>M</kbd> sound &nbsp; <kbd>Esc</kbd> exit</div>
+    <main>
+      <section class="hero">
+        <div class="wrap hero__grid">
+          <div class="hero__pitch">
+            <p class="kicker">Top-down multiplayer racing</p>
+            <h1 class="hero__title"><span>Race your changes</span> <span class="accent">to production.</span></h1>
+            <p class="hero__lede">Drift, draft and sabotage up to seven colleagues on the way. Share a room code and go. Nothing to install.</p>
           </div>
-          <p class="tip">Tuck in behind another car to slipstream. Hit the red chevrons for a boost. Avoid the oil.</p>
-        </div>
-      </div>
 
-      <div class="panel home-side">
-        <h3>Hall of Fame</h3>
-        <div id="hof-drivers" class="hof"></div>
-        <h3>Lap records</h3>
-        <div id="hof-tracks" class="hof"></div>
-        <h3>Powerups</h3>
-        <ul id="item-list" class="item-list"></ul>
+          <div class="hero__start">
+            <svg class="hero__chevrons" viewBox="0 0 155 100" aria-hidden="true">
+              <path class="chev chev--1" d="M36 21 L70 50 L36 79" transform="scale(0.86)" transform-origin="53 50"/>
+              <path class="chev chev--2" d="M58 19 L94 50 L58 81" transform="scale(0.93)" transform-origin="76 50"/>
+              <path class="chev chev--3" d="M80 17 L118 50 L80 83"/>
+            </svg>
+            <div class="start-card">
+              <h2 class="start-card__title">Get on the grid</h2>
+
+              <label for="name-input">Driver name</label>
+              <div class="name-row">
+                <input id="name-input" maxlength="16" placeholder="e.g. Basis Bandit" autocomplete="off" aria-describedby="name-status" />
+                <button id="btn-claim" class="btn">Save</button>
+              </div>
+              <p id="name-status" class="hint" role="status"></p>
+
+              <!-- Everything below stays disabled until a name is saved. The code
+                   field too: its Enter key joins directly, so leaving it live would
+                   be a way around the gate. -->
+              <button id="btn-create" class="btn primary" disabled>Create a room</button>
+              <div class="divider"><span>or join one</span></div>
+              <div class="join-row">
+                <input id="code-input" maxlength="4" placeholder="Room code" aria-label="Room code" autocomplete="off" disabled />
+                <button id="btn-join" class="btn" disabled>Join</button>
+              </div>
+              <p id="home-error" class="error" role="alert"></p>
+            </div>
+          </div>
+
+          <dl class="facts">
+            <div><dt>Tracks</dt><dd id="fact-tracks">9</dd></div>
+            <div><dt>Powerups</dt><dd id="fact-items">12</dd></div>
+            <div><dt>Cars</dt><dd id="fact-cars">16</dd></div>
+            <div><dt>Drivers a room</dt><dd>8</dd></div>
+          </dl>
+        </div>
+      </section>
+
+      <section class="band band--tint" aria-labelledby="hof-title">
+        <div class="wrap split">
+          <div class="split__words">
+            <h2 class="band__title" id="hof-title">Hall of Fame</h2>
+            <p class="band__lede">All-time standings count races with two or more people driving. Lap records count whoever is on the track.</p>
+          </div>
+          <div class="split__thing boards">
+            <div>
+              <h3 class="label">All-time standings</h3>
+              <div id="hof-drivers" class="hof"></div>
+            </div>
+            <div>
+              <h3 class="label">Lap records</h3>
+              <div id="hof-tracks" class="hof"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="band" aria-labelledby="drive-title">
+        <div class="wrap split split--flip">
+          <div class="split__words">
+            <h2 class="band__title" id="drive-title">How to drive it</h2>
+            <dl class="keys">
+              <div><dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows</dt><dd>Drive</dd></div>
+              <div><dt><kbd>Shift</kbd> held in a corner</dt><dd>Drift, then release for a mini-turbo</dd></div>
+              <div><dt><kbd>Space</kbd></dt><dd>Use your powerup</dd></div>
+              <div><dt><kbd>H</kbd> <kbd>R</kbd> <kbd>M</kbd> <kbd>Esc</kbd></dt><dd>Horn, back on track, sound, leave</dd></div>
+            </dl>
+            <p class="tip">Tuck in behind another car to slipstream. Hit the red chevrons for a boost. Avoid the oil.</p>
+          </div>
+          <div class="split__thing">
+            <h3 class="label">Powerups <small>Grab a ? box. Drivers further back roll better ones.</small></h3>
+            <ul id="item-list" class="item-list"></ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="band demo" id="demo" aria-labelledby="demo-title">
+        <div class="wrap split split--even">
+          <div class="split__words">
+            <h2 class="band__title" id="demo-title">See the real Rev-Trac.</h2>
+            <p class="band__lede">The game is a joke about SAP change management. Rev-Trac is the product that does it for real. Ask for a demo and the Rev-Trac team will take it from there.</p>
+            <ul class="demo__alt">
+              <li><span>Email</span> <a href="mailto:hello@rev-trac.com">hello@rev-trac.com</a></li>
+              <li><span>Contact form</span> <a href="https://rev-trac.com/contact/" target="_blank" rel="noopener">rev-trac.com/contact</a></li>
+              <li><span>Recorded demos</span> <a href="https://rev-trac.com/category/demos/" target="_blank" rel="noopener">rev-trac.com/category/demos</a></li>
+            </ul>
+          </div>
+
+          <!-- The request goes out as an email from the visitor's own mail app.
+               To send it somewhere else, change data-to. -->
+          <form id="demo-form" class="split__thing demo-form" data-to="hello@rev-trac.com" novalidate>
+            <div class="field">
+              <label for="demo-name">Your name</label>
+              <input id="demo-name" name="name" autocomplete="name" maxlength="80" required aria-describedby="demo-name-msg" />
+              <p class="field__msg" id="demo-name-msg"></p>
+            </div>
+            <div class="field">
+              <label for="demo-email">Work email</label>
+              <input id="demo-email" name="email" type="email" inputmode="email" autocomplete="email" maxlength="120" required aria-describedby="demo-email-msg" />
+              <p class="field__msg" id="demo-email-msg"></p>
+            </div>
+            <div class="field field--wide">
+              <label for="demo-company">Company</label>
+              <input id="demo-company" name="company" autocomplete="organization" maxlength="100" required aria-describedby="demo-company-msg" />
+              <p class="field__msg" id="demo-company-msg"></p>
+            </div>
+            <div class="field field--wide">
+              <label for="demo-message">What would you like to see? <small>Optional</small></label>
+              <textarea id="demo-message" name="message" maxlength="600" rows="3"></textarea>
+              <p class="field__msg"></p>
+            </div>
+            <div class="demo-form__foot">
+              <button type="submit" class="btn primary">Request a demo</button>
+              <p class="demo-form__note">Opens your email app with the request written. Nothing is sent from this page.</p>
+            </div>
+            <div class="demo-result" id="demo-result" role="status">
+              <p id="demo-result-text"></p>
+              <div class="demo-result__actions" id="demo-result-actions" hidden>
+                <button type="button" id="demo-copy" class="btn small ghost">Copy the request</button>
+              </div>
+              <textarea id="demo-copy-text" class="demo-result__text" rows="8" readonly hidden aria-label="Your demo request, ready to copy"></textarea>
+            </div>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <div class="wrap foot__row">
+        <p>Rev-Trac Racer. A game about getting changes to production.</p>
+        <ul class="foot__links">
+          <li><a href="https://rev-trac.com/" target="_blank" rel="noopener">rev-trac.com</a></li>
+          <li><a href="#demo">Request a demo</a></li>
+        </ul>
       </div>
-    </div>
+    </footer>
   </div>
 
   <!-- LOBBY -->

@@ -14,8 +14,15 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
   const TAU = Math.PI * 2;
-  const WORLD = { w: 1600, h: 1000 };
-  const ITEM_ROW_FRACS = [0.12, 0.28, 0.45, 0.62, 0.78, 0.92];
+  // Tracks are authored on a 1600x1000 design grid, then scaled up into the
+  // world. Cars are a fixed size, so SCALE is how big the tracks are relative
+  // to them. The road is widened by less than the layout grows: more room to
+  // race, without the corners turning into car parks.
+  const DESIGN = { w: 1600, h: 1000 };
+  const SCALE = 1.4;
+  const WIDTH_SCALE = 1.2;
+  const WORLD = { w: DESIGN.w * SCALE, h: DESIGN.h * SCALE };
+  const ITEM_ROW_FRACS = [0.09, 0.21, 0.33, 0.45, 0.57, 0.69, 0.81, 0.93];
 
   // ---- small shared helpers ------------------------------------------------
   function mulberry32(seed) {
@@ -53,7 +60,7 @@
   }
 
   // Rounded-rectangle centerline, starting at bottom center heading +x.
-  function roundedRectPoints(cx, cy, bx, by, r, step = Math.PI / 12) {
+  function roundedRectPoints(cx, cy, bx, by, r, step = Math.PI / 20) {
     const pts = [[cx, cy + by + r], [cx + bx, cy + by + r]];
     for (let a = Math.PI / 2 - step; a > 0.0001; a -= step)
       pts.push([cx + bx + r * Math.cos(a), cy + by + r * Math.sin(a)]);
@@ -238,14 +245,15 @@
   };
 
   // ---- track roster --------------------------------------------------------
+  // Coordinates, halfWidth and logo boxes below are in DESIGN units.
   const defs = [
     {
-      id: 0, name: 'Go-Live GP', theme: 'meadow', stars: 1, halfWidth: 90, pads: 2, oil: 1,
+      id: 0, name: 'Go-Live GP', theme: 'meadow', stars: 1, halfWidth: 90, pads: 3, oil: 2,
       desc: 'The classic circuit. Balanced corners, honest racing.',
       pts: roundedRectPoints(800, 500, 350, 80, 200),
     },
     {
-      id: 1, name: 'Transport Twister', theme: 'desert', stars: 2, halfWidth: 80, pads: 2, oil: 2,
+      id: 1, name: 'Transport Twister', theme: 'desert', stars: 2, halfWidth: 80, pads: 3, oil: 3,
       desc: 'A flowing ring broken up by two nasty chicanes.',
       pts: chaikin([
         [1080, 850], [1230, 850],
@@ -260,7 +268,7 @@
       ], 3),
     },
     {
-      id: 2, name: 'Prod Speedway', theme: 'night', stars: 1, halfWidth: 85, pads: 3, oil: 1,
+      id: 2, name: 'Prod Speedway', theme: 'night', stars: 1, halfWidth: 85, pads: 4, oil: 2,
       desc: 'A flat-out neon tri-oval. Three corners, zero excuses.',
       pts: chaikin([
         [700, 870], [1150, 870],
@@ -272,12 +280,12 @@
       ], 3),
     },
     {
-      id: 3, name: 'Sandbox Scramble', theme: 'beach', stars: 2, halfWidth: 88, pads: 2, oil: 2,
+      id: 3, name: 'Sandbox Scramble', theme: 'beach', stars: 2, halfWidth: 88, pads: 3, oil: 3,
       desc: 'A wobbly beach loop with three sweeping esses.',
-      pts: parametricPoints(800, 500, 520, 300, (t) => 1 + 0.12 * Math.cos(3 * t + 0.6), 90, Math.PI / 2),
+      pts: parametricPoints(800, 500, 520, 300, (t) => 1 + 0.12 * Math.cos(3 * t + 0.6), 128, Math.PI / 2),
     },
     {
-      id: 4, name: 'Hotfix Hairpin', theme: 'lava', stars: 3, halfWidth: 75, pads: 2, oil: 2,
+      id: 4, name: 'Hotfix Hairpin', theme: 'lava', stars: 3, halfWidth: 75, pads: 3, oil: 3,
       desc: 'Sweepers, then a deep hairpin. Brake or backout.',
       logo: { x: 430, y: 545, w: 330 },
       pts: chaikin([
@@ -293,7 +301,7 @@
       ], 3),
     },
     {
-      id: 5, name: 'Integration Esses', theme: 'snow', stars: 4, halfWidth: 72, pads: 2, oil: 1,
+      id: 5, name: 'Integration Esses', theme: 'snow', stars: 4, halfWidth: 72, pads: 3, oil: 2,
       desc: 'A snaking weave across the top — with black ice.',
       logo: { x: 800, y: 610, w: 420 },
       ice: [[0.47, 0.55], [0.63, 0.69]],
@@ -310,7 +318,7 @@
       ], 3),
     },
     {
-      id: 6, name: 'Double Downtime', theme: 'datacenter', stars: 5, halfWidth: 70, pads: 2, oil: 2,
+      id: 6, name: 'Double Downtime', theme: 'datacenter', stars: 5, halfWidth: 70, pads: 3, oil: 3,
       desc: 'Two deep hairpin fingers — one down, one up. Unplanned.',
       logo: { x: 1200, y: 620, w: 270 },
       pts: chaikin([
@@ -330,7 +338,7 @@
       ], 3),
     },
     {
-      id: 7, name: 'Audit Trail', theme: 'autumn', stars: 3, halfWidth: 74, pads: 2, oil: 2,
+      id: 7, name: 'Audit Trail', theme: 'autumn', stars: 3, halfWidth: 74, pads: 3, oil: 3,
       desc: 'A staircase of switchbacks. Every corner gets reviewed.',
       logo: { x: 640, y: 530, w: 400 },
       pts: chaikin([
@@ -345,16 +353,20 @@
       ], 3),
     },
     {
-      id: 8, name: 'Merge Conflict', theme: 'void', stars: 5, halfWidth: 74, pads: 2, oil: 1,
+      id: 8, name: 'Merge Conflict', theme: 'void', stars: 5, halfWidth: 74, pads: 3, oil: 2,
       desc: 'A figure-8 with a live crossing. Resolve it at 400 km/h.',
       logo: { x: 428, y: 500, w: 225 },
       crossing: { x: 800, y: 500 },
-      pts: figure8Points(800, 500, 600, 300, 128, Math.PI * 0.3),
+      pts: figure8Points(800, 500, 600, 300, 180, Math.PI * 0.3),
     },
   ];
 
+  // Design units -> world units. Everything downstream (physics, rendering,
+  // furniture placement) only ever sees the scaled map.
   const MAPS = defs.map((d) => {
-    const path = buildPath(d.pts);
+    const pts = d.pts.map(([x, y]) => [x * SCALE, y * SCALE]);
+    const halfWidth = Math.round(d.halfWidth * WIDTH_SCALE);
+    const path = buildPath(pts);
     const rng = mulberry32(1000 + d.id * 7919);
     let logo = d.logo;
     if (!logo) {
@@ -362,17 +374,22 @@
       const cy = d.pts.reduce((s, p) => s + p[1], 0) / d.pts.length;
       logo = { x: cx, y: cy, w: 440 };
     }
+    logo = { x: logo.x * SCALE, y: logo.y * SCALE, w: logo.w * SCALE };
+    const crossing = d.crossing ? { x: d.crossing.x * SCALE, y: d.crossing.y * SCALE } : undefined;
     const boostPads = placeBoostPads(path, d.pads || 0);
     return {
       ...d,
+      pts,
+      halfWidth,
       path,
       logo,
+      crossing,
       ice: d.ice || [],
-      itemBoxes: placeItemBoxes(path, d.halfWidth),
+      itemBoxes: placeItemBoxes(path, halfWidth),
       boostPads,
-      oil: placeOil(path, d.halfWidth, d.oil || 0, rng, boostPads),
+      oil: placeOil(path, halfWidth, d.oil || 0, rng, boostPads),
     };
   });
 
-  return { MAPS, THEMES, WORLD, pointAt, closest, closestNear, bend, mulberry32, wrap01, uDiff, angNorm };
+  return { MAPS, THEMES, WORLD, SCALE, pointAt, closest, closestNear, bend, mulberry32, wrap01, uDiff, angNorm };
 });

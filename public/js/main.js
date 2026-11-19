@@ -12,7 +12,10 @@
   // bootstrap() connects it.
   const socket = io({ autoConnect: false });
   const $ = (id) => document.getElementById(id);
-  const INTERP_MS = 100; // render this far behind the newest snapshot
+  // The race is drawn slightly in the past, between two snapshots, so motion
+  // stays smooth when packets arrive unevenly. That delay is felt directly as
+  // input lag, so it adapts: as small as this connection's jitter allows.
+  const INTERP_MIN_MS = 34, INTERP_MAX_MS = 130, INTERP_START_MS = 60;
 
   // ---- small utilities -----------------------------------------------------
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -102,7 +105,10 @@
 
   async function claimName() {
     const name = $('name-input').value.trim();
+    const btn = $('btn-claim');
+    if (btn.getAttribute('aria-busy') === 'true') return;
     setNameStatus('Saving…');
+    btn.setAttribute('aria-busy', 'true');
     try {
       const res = await fetch('/api/profile/name', {
         method: 'POST',
@@ -115,6 +121,8 @@
       renderNameGate();
     } catch (e) {
       setNameStatus('Network error — try again', 'error');
+    } finally {
+      btn.removeAttribute('aria-busy');
     }
   }
   $('btn-claim').onclick = claimName;
@@ -193,7 +201,7 @@
         ? rec.drivers.slice(0, 6).map((d, i) =>
           `<div class="row"><span class="rank">${i + 1}</span><span class="who">${esc(d.name)}</span>` +
           `<span class="val">${d.wins} win${d.wins === 1 ? '' : 's'} · ${d.points} pts · ${d.races} races</span></div>`).join('')
-        : '<div class="empty">No races yet. Be the first name on the board.</div>';
+        : '<div class="empty">Nobody on the board yet. Races count once two or more people are driving.</div>';
       const rows = MAPS.filter((m) => rec.tracks[m.id] && rec.tracks[m.id].lap).map((m) => {
         const lap = rec.tracks[m.id].lap;
         return `<div class="row"><span class="who">${esc(m.name)}</span><span class="val">${fmtLap(lap.time)} · ${esc(lap.name)}</span></div>`;
@@ -202,6 +210,118 @@
     }).catch(() => { /* offline: leave as is */ });
   }
   loadHallOfFame();
+
+  // The numbers in the hero are counted, not typed, so they cannot go stale.
+  $('fact-tracks').textContent = MAPS.length;
+  $('fact-items').textContent = Object.keys(ITEMS).length;
+  $('fact-cars').textContent = CARS.length;
+
+  // ---- request a demo ------------------------------------------------------
+  // There is no mail server behind this page, so the form writes the email and
+  // hands it to the visitor's own mail app. Nothing they type leaves the
+  // browser until they press send there. The address is data-to on the form.
+  const demoForm = $('demo-form');
+  const DEMO_FIELDS = [
+    { id: 'demo-name', check: (v) => (v ? '' : 'Enter your name.') },
+    { id: 'demo-email', check: (v) => (!v ? 'Enter your work email.'
+      : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? '' : 'That does not look like an email address.') },
+    { id: 'demo-company', check: (v) => (v ? '' : 'Enter your company.') },
+  ];
+  let demoText = '';
+
+  function checkDemoField(f) {
+    const el = $(f.id);
+    const msg = f.check(el.value.trim());
+    if (msg) el.setAttribute('aria-invalid', 'true'); else el.removeAttribute('aria-invalid');
+    $(f.id + '-msg').textContent = msg;
+    return !msg;
+  }
+  // Complain when a filled-in field is left wrong; forgive as soon as it is fixed.
+  DEMO_FIELDS.forEach((f) => {
+    const el = $(f.id);
+    el.addEventListener('blur', () => { if (el.value.trim() || el.hasAttribute('aria-invalid')) checkDemoField(f); });
+    el.addEventListener('input', () => { if (el.hasAttribute('aria-invalid')) checkDemoField(f); });
+  });
+
+  function setDemoResult(text, state, withCopy) {
+    // The address is kept on one line: broken at its hyphen it reads as two things.
+    const to = demoForm.dataset.to;
+    const out = $('demo-result-text');
+    out.textContent = '';
+    text.split(to).forEach((part, i) => {
+      if (i) {
+        const addr = document.createElement('span');
+        addr.className = 'nowrap';
+        addr.textContent = to;
+        out.appendChild(addr);
+      }
+      out.appendChild(document.createTextNode(part));
+    });
+    $('demo-result').dataset.state = state || '';
+    $('demo-result-actions').hidden = !withCopy;
+    $('demo-copy-text').hidden = true;
+  }
+
+  demoForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const bad = DEMO_FIELDS.filter((f) => !checkDemoField(f));
+    if (bad.length) {
+      setDemoResult('', '', false);
+      $(bad[0].id).focus();
+      return;
+    }
+    const v = (id) => $(id).value.trim();
+    const to = demoForm.dataset.to;
+    const subject = `Demo request: ${v('demo-company')}`;
+    const lines = [
+      'Hi Rev-Trac team,', '',
+      'I would like to see a demo of Rev-Trac.', '',
+      `Name: ${v('demo-name')}`,
+      `Work email: ${v('demo-email')}`,
+      `Company: ${v('demo-company')}`,
+    ];
+    if (v('demo-message')) lines.push('', 'What I would like to see:', v('demo-message'));
+    lines.push('', 'Sent from Rev-Trac Racer');
+    const body = lines.join('\n');
+    demoText = `To: ${to}\nSubject: ${subject}\n\n${body}`;
+    // A link click, not a navigation: the page (and any open socket) stays put.
+    const link = document.createElement('a');
+    link.href = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body.replace(/\n/g, '\r\n'))}`;
+    link.click();
+    setDemoResult(`Your email app should now be open with the request addressed to ${to}. It is sent when you press send there. ` +
+      'If nothing opened, copy the request and paste it into an email.', 'ok', true);
+  });
+
+  $('demo-copy').onclick = async () => {
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(demoText);
+      copied = true;
+    } catch (e) {
+      // No clipboard permission (or plain http): fall back to a selection copy.
+      const ta = document.createElement('textarea');
+      ta.value = demoText;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { copied = document.execCommand('copy'); } catch (e2) { copied = false; }
+      ta.remove();
+    }
+    const to = demoForm.dataset.to;
+    if (copied) {
+      setDemoResult(`Copied. Paste it into an email to ${to}.`, 'ok', true);
+      return;
+    }
+    // Last resort: put the text on the page, selected, so it can be copied by hand.
+    setDemoResult(`This browser would not copy it for you. The request is below, selected: copy it and email it to ${to}.`, '', true);
+    const box = $('demo-copy-text');
+    box.value = demoText;
+    box.hidden = false;
+    box.focus();
+    box.select();
+  };
 
   // =========================================================================
   // LOBBY
@@ -382,6 +502,10 @@
       meIdx: roster.findIndex((r) => r.id === myId),
       snaps: [],
       offset: null,
+      interpMs: INTERP_START_MS, // current render delay (adaptive)
+      lastArrival: 0,
+      gapAvg: 17,                // smoothed ms between snapshots
+      gapDev: 4,                 // smoothed deviation of that gap (jitter)
       status: 'countdown',
       chaos: null,
       ink: null,
@@ -415,6 +539,16 @@
     const sample = snap.t - now;
     if (race.offset === null || Math.abs(sample - race.offset) > 400) race.offset = sample;
     else race.offset += (sample - race.offset) * 0.08;
+    // Measure how evenly snapshots arrive and size the render delay to match:
+    // one and a half gaps plus headroom for jitter. Eased, so time never jumps.
+    const gap = now - race.lastArrival;
+    race.lastArrival = now;
+    if (gap > 0 && gap < 500) {
+      race.gapAvg += (gap - race.gapAvg) * 0.05;
+      race.gapDev += (Math.abs(gap - race.gapAvg) - race.gapDev) * 0.05;
+      const want = clamp(race.gapAvg * 1.5 + race.gapDev * 3, INTERP_MIN_MS, INTERP_MAX_MS);
+      race.interpMs += (want - race.interpMs) * 0.02;
+    }
     race.snaps.push(snap);
     if (race.snaps.length > 40) race.snaps.shift();
     race.status = snap.st;
@@ -481,7 +615,7 @@
   const SPIN_VERBS = { cab: 'sent to CAB review', oops: "OOPS'd", missile: 'rolled back', giant: 'flattened' };
 
   function onEvent(e, snap) {
-    const P = (i) => snap.p[i] || { x: 800, y: 500 };
+    const P = (i) => snap.p[i] || { x: RTMaps.WORLD.w / 2, y: RTMaps.WORLD.h / 2 };
     const loud = (i) => (isMe(i) ? 1 : 0.35);
     switch (e.k) {
       case 'go':
@@ -631,7 +765,7 @@
   function getView(now) {
     const sn = race.snaps;
     if (!sn.length) return null;
-    const rt = now + race.offset - INTERP_MS;
+    const rt = now + race.offset - race.interpMs;
     let j = sn.length - 1;
     while (j > 0 && sn[j].t > rt) j--;
     const s0 = sn[j], s1 = sn[Math.min(sn.length - 1, j + 1)];
@@ -761,6 +895,12 @@
     $('results-records').innerHTML = (d.records || []).map((r) =>
       `<div class="record">🏆 NEW ${r.type === 'lap' ? 'LAP' : `${r.laps}-LAP RACE`} RECORD — ${esc(r.name)} · ${r.type === 'lap' ? fmtLap(r.time) : fmtTime(r.time)}` +
       (r.prev ? ` <span style="font-weight:500">(was ${r.type === 'lap' ? fmtLap(r.prev) : fmtTime(r.prev)})</span>` : '') + '</div>').join('');
+    // All-time standings need two or more people who actually drove.
+    if (d.counted === false) {
+      $('results-records').insertAdjacentHTML('beforeend',
+        '<div class="soft-note">This race did not count toward the all-time Hall of Fame standings: that takes ' +
+        'two or more people actually racing. Lap records still count, and so do the points in this room\'s championship.</div>');
+    }
 
     const pod = $('podium');
     pod.innerHTML = '';
@@ -828,7 +968,7 @@
   refreshSoundButton();
 
   window.addEventListener('keydown', (e) => {
-    if (e.target && e.target.tagName === 'INPUT') return;
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
     if (e.code === 'KeyM') { A.unlock(); A.cycleMode(); refreshSoundButton(); return; }
     if (screen !== 'game') return;
     if (e.code === 'Escape') { e.preventDefault(); exitRace(); return; }

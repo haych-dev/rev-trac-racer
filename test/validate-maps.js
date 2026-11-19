@@ -26,7 +26,7 @@ for (const map of RTMaps.MAPS) {
 
   const minGap = 2 * hw + 15;
   const arcExclusion = 3 * hw;
-  const nearCrossing = ([x, y]) => map.crossing && Math.hypot(x - map.crossing.x, y - map.crossing.y) < 240;
+  const nearCrossing = ([x, y]) => map.crossing && Math.hypot(x - map.crossing.x, y - map.crossing.y) < 240 * RTMaps.SCALE;
   let worst = { d: Infinity };
   for (let i = 0; i < pts.length; i++) {
     if (nearCrossing(pts[i])) continue;
@@ -45,7 +45,8 @@ for (const map of RTMaps.MAPS) {
   }
 
   if (total < 2000) issues.push(`track too short: ${Math.round(total)}px`);
-  if (map.itemBoxes.length !== 18) issues.push(`expected 18 item boxes, got ${map.itemBoxes.length}`);
+  if (map.itemBoxes.length !== 24) issues.push(`expected 24 item boxes, got ${map.itemBoxes.length}`);
+  if (map.oil.length < 2) issues.push(`expected at least 2 oil slicks, got ${map.oil.length}`);
   if (map.boostPads.length !== map.pads) issues.push(`expected ${map.pads} boost pads, got ${map.boostPads.length}`);
   if (!map.oil.length) issues.push('no oil slicks were placed');
   if (!RTMaps.THEMES[map.theme]) issues.push(`unknown theme ${map.theme}`);

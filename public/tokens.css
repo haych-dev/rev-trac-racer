@@ -1,0 +1,138 @@
+/* Rev-Trac Racer — design tokens.
+ * Theme: studied-DNA (source: rev-trac.com). Every colour, font, space and
+ * shadow in style.css refers to a name defined here; nothing is inlined there.
+ * Hex in the comments is the measured brand value each OKLCH was derived from.
+ */
+
+@font-face {
+  font-family: "DM Sans";
+  src: url("fonts/dm-sans-latin-wght-normal.woff2") format("woff2");
+  font-weight: 100 1000;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* ---- type ---- */
+  --font-display: "DM Sans", "Segoe UI", system-ui, sans-serif;
+  --font-body: "DM Sans", "Segoe UI", system-ui, sans-serif;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-md: 1.125rem;
+  --text-lg: 1.375rem;
+  --text-xl: clamp(1.75rem, 1.3rem + 1.9vw, 2.5rem);
+  --text-display: clamp(2.5rem, 5.4vw, 4.25rem);
+
+  --lh-display: 1.03;
+  --lh-heading: 1.12;
+  --lh-body: 1.55;
+  --track-display: -0.025em;
+  --track-heading: -0.02em;
+  --track-caps: 0.12em;
+
+  /* ---- surfaces ---- */
+  --color-paper: oklch(99.4% 0.002 248);          /* #fcfdfe */
+  --color-paper-2: oklch(96.6% 0.007 261);        /* #f1f4f9 */
+  --color-paper-3: oklch(93.2% 0.015 261);        /* #e3e9f3 */
+  --color-rule: oklch(89.3% 0.018 261);           /* #d5dce8 */
+  --color-ink-soft: oklch(91.7% 0.025 263);       /* #dbe4f5 */
+  --color-ink-rule: oklch(85.5% 0.036 263);       /* #c3d0e8 */
+  --color-hairline: oklch(27.9% 0.062 266 / 0.25);
+  --color-field-rule: oklch(65% 0.035 262);       /* input edge, 3:1 on paper */
+
+  /* ---- ink ---- */
+  --color-ink: oklch(35.2% 0.093 262);            /* #1e396b  headings */
+  --color-ink-mid: oklch(42.7% 0.115 262);        /* #2a4c8d */
+  --color-ink-deep: oklch(27.9% 0.062 266);       /* #1a2747  dark band */
+  --color-ink-deeper: oklch(23.6% 0.05 266);      /* #131d36 */
+  --color-body: oklch(38.9% 0.093 265);           /* #2c4276  running text */
+  --color-muted: oklch(50.5% 0.031 262);          /* #5b6577 */
+  --color-faint: oklch(71.9% 0.03 261);           /* #9aa5b8 */
+
+  /* ---- accent (brand red) ---- */
+  --color-accent: oklch(63.4% 0.194 20);          /* #e84a56  large type only */
+  --color-accent-strong: oklch(58.5% 0.192 22);   /* #d63a44  fills: white on it is 4.6:1 */
+  --color-accent-hover: oklch(54.1% 0.181 22);    /* #c2313b */
+  --color-accent-text: oklch(54.1% 0.181 22);     /* #c2313b  small red text on light */
+  --color-accent-ink: oklch(99.4% 0.002 248);     /* text on an accent fill */
+  --color-accent-soft: oklch(96.1% 0.016 8);      /* #fdeef0 */
+  --color-accent-rule: oklch(83.7% 0.068 13);     /* #f2b8bd */
+  --color-chevron: oklch(64.9% 0.198 21);         /* #ef4d57  the hero arrows */
+  --color-chevron-glow: oklch(64.9% 0.198 21 / 0.5);
+
+  /* ---- on the dark band ---- */
+  --color-on-deep: oklch(99.4% 0.002 248);
+  --color-on-deep-muted: oklch(77.6% 0.042 267);  /* #aab6d2  7.2:1 on ink-deep */
+  --color-deep-field: oklch(32.7% 0.067 266);     /* #243357 */
+  --color-deep-rule: oklch(41.5% 0.072 267);      /* #3a4a73 */
+  --color-deep-field-rule: oklch(62% 0.055 267);  /* input edge on the dark band */
+  --color-deep-bad: oklch(76.9% 0.138 15);        /* #ff8d97  6.7:1 on ink-deep */
+
+  /* ---- signals ---- */
+  --color-focus: oklch(35.2% 0.093 262);
+  --color-focus-deep: oklch(99.4% 0.002 248);
+  --color-good: oklch(50.9% 0.143 145);           /* #1d7a2b */
+  --color-good-soft: oklch(93.7% 0.039 149);      /* #d9f2dc */
+  --color-gold: oklch(65.2% 0.132 82);            /* #b8860b  fills */
+  --color-gold-text: oklch(54.7% 0.112 84);       /* #8f6a00  4.9:1 on paper */
+  --color-silver: oklch(63.1% 0.03 260);          /* #7f8a9c */
+  --color-bronze: oklch(56.6% 0.095 58);          /* #a0673a */
+  --color-warn-soft: oklch(96.8% 0.041 90);       /* #fff4d6 */
+  --color-warn-rule: oklch(87.9% 0.099 90);       /* #f0d58a */
+  --color-warn-ink: oklch(44.3% 0.091 84);        /* #6b4e00 */
+  --color-signal: oklch(88.5% 0.181 95);          /* #ffd60a */
+  --color-signal-glow: oklch(88.5% 0.181 95 / 0.45);
+  --color-canvas: oklch(38.1% 0.1 146);           /* #14501f  before the track paints */
+  --color-edge: oklch(23.6% 0.05 266 / 0.24);
+
+  /* ---- depth ---- */
+  --ring-ink-soft: 0 0 0 3px oklch(35.2% 0.093 262 / 0.18);
+  --shadow-card: 0 12px 36px oklch(35.2% 0.093 262 / 0.14);
+  --shadow-pop: 0 2px 8px oklch(35.2% 0.093 262 / 0.12);
+  --shadow-stage: 0 6px 22px oklch(35.2% 0.093 262 / 0.25);
+  --shadow-chaos: 0 6px 24px oklch(58.5% 0.192 22 / 0.55);
+  --shadow-text-lg: 0 5px 26px oklch(23.6% 0.05 266 / 0.8), 0 0 3px oklch(23.6% 0.05 266 / 0.65);
+  --shadow-text-sm: 0 2px 8px oklch(23.6% 0.05 266 / 0.9), 0 0 2px oklch(23.6% 0.05 266 / 0.85);
+
+  /* ---- space (4 px grid) ---- */
+  --space-3xs: 0.25rem;
+  --space-2xs: 0.5rem;
+  --space-xs: 0.75rem;
+  --space-sm: 1rem;
+  --space-md: 1.5rem;
+  --space-lg: 2rem;
+  --space-xl: 3rem;
+  --space-2xl: 4rem;
+  --space-3xl: 6rem;
+  --gutter: clamp(1rem, 0.4rem + 3vw, 2rem);
+  --measure: 34rem;
+  --wrap: 72rem;
+
+  /* ---- shape ---- */
+  --radius-sm: 0.5rem;
+  --radius-field: 0.75rem;
+  --radius-card: 1.25rem;
+  --radius-pill: 999px;
+  --control-h: 2.75rem;
+
+  /* ---- motion ---- */
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --dur-fast: 120ms;
+  --dur-reveal: 520ms;
+
+  /* ---- names the lobby, race and results rules already use ---- */
+  --bg: var(--color-paper-2);
+  --panel: var(--color-paper);
+  --panel2: var(--color-paper-2);
+  --text: var(--color-body);
+  --muted: var(--color-muted);
+  --navy: var(--color-ink);
+  --navy-dark: var(--color-ink-deep);
+  --navy-soft: var(--color-ink-soft);
+  --red: var(--color-accent);
+  --red-dark: var(--color-accent-text);
+  --gold: var(--color-gold-text);
+  --border: var(--color-rule);
+}

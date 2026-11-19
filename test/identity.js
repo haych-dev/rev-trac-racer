@@ -114,29 +114,140 @@ const tmp = (name) => path.join(dir, name);
   check('parseCookies survives junk', typeof parseCookies('%E0%A4%A; =x; novalue') === 'object' && typeof parseCookies(undefined) === 'object');
 }
 
+// ---- hall of fame: farming guards ------------------------------------------
+{
+  const { minPlausibleMs } = require('../lib/records.js');
+  const RTMaps = require('../public/maps.js');
+  const { P } = require('../lib/race.js');
+  const RACE = { mapId: 0, laps: 3, mode: 'race' };
+  const GOOD_LAP = 9000, GOOD_RACE = 30000;
+  let n = 0;
+  const fresh = () => new Records(tmp(`records-${n++}.json`));
+  // A human row as the server builds it. Defaults: finished, drove, plausible times.
+  const row = (pid, pos, extra = {}) => ({
+    pid, name: 'Driver ' + pid, carId: 1, bot: false, pos, finished: true, out: null,
+    time: GOOD_RACE + pos * 1000, bestLap: GOOD_LAP + pos * 100, points: [15, 12, 10, 8][pos - 1] || 0,
+    progressed: true, ...extra,
+  });
+  const bot = (pos) => ({ pid: null, name: 'Legacy Larry', carId: 2, bot: true, pos, finished: true, out: null, time: 31000, bestLap: 8000, points: 12, progressed: true });
+  const driver = (rec, pid) => rec.data.drivers[pid] || { races: 0, wins: 0, podiums: 0, points: 0 };
+
+  // -- solo against the AI
+  let rec = fresh();
+  let res = rec.submit(RACE, [row('a', 1), bot(2), bot(3)]);
+  check('a solo race against AI drivers does not count for standings', res.standings === false);
+  check('…and earns no race, win or points', driver(rec, 'a').races === 0 && driver(rec, 'a').wins === 0 && rec.summary().drivers.length === 0);
+  check('…but still sets track records', res.records.some((r) => r.type === 'lap') && res.records.some((r) => r.type === 'race'));
+  check('a bot never holds a record, however fast', rec.summary().tracks[0].lap.name === 'Driver a');
+
+  // -- two real drivers
+  rec = fresh();
+  res = rec.submit(RACE, [row('a', 1), row('b', 2), bot(3)]);
+  check('two distinct profiles that drove count for standings', res.standings === true);
+  check('the winner gets a race, a win, a podium and points', JSON.stringify(driver(rec, 'a')) === JSON.stringify({ name: 'Driver a', races: 1, wins: 1, podiums: 1, points: 15 }));
+  check('the runner-up gets a race and a podium but no win', driver(rec, 'b').races === 1 && driver(rec, 'b').wins === 0 && driver(rec, 'b').podiums === 1);
+
+  // -- podium boundary
+  rec = fresh();
+  rec.submit(RACE, [row('a', 1), row('b', 2), row('c', 3), row('d', 4)]);
+  check('3rd place gets a podium, 4th does not', driver(rec, 'c').podiums === 1 && driver(rec, 'd').podiums === 0 && driver(rec, 'd').races === 1);
+
+  // -- a parked second profile
+  rec = fresh();
+  res = rec.submit(RACE, [row('farmer', 1), row('puppet', 2, { progressed: false, finished: false, time: null, bestLap: null, points: 12 })]);
+  check('a profile that never moved does not open the standings gate', res.standings === false);
+  check('…so neither the driver nor the puppet earns anything', driver(rec, 'farmer').races === 0 && driver(rec, 'puppet').races === 0);
+  check('…while the genuine run still sets a record', res.records.some((r) => r.type === 'lap'));
+
+  // -- one profile in several seats
+  rec = fresh();
+  res = rec.submit(RACE, [row('farmer', 1), row('farmer', 2), row('farmer', 3)]);
+  check('many seats held by one profile do not open standings', res.standings === false && driver(rec, 'farmer').races === 0);
+  rec = fresh();
+  res = rec.submit(RACE, [row('farmer', 2), row('farmer', 1), row('rival', 3), row('farmer', 4)]);
+  check('with a genuine rival, three seats earn one race, one win, one podium', driver(rec, 'farmer').races === 1 && driver(rec, 'farmer').wins === 1 && driver(rec, 'farmer').podiums === 1);
+  check('…and points for the best seat only', driver(rec, 'farmer').points === 15);
+  check('the rival is unaffected', driver(rec, 'rival').races === 1 && driver(rec, 'rival').wins === 0);
+
+  // -- retiring
+  rec = fresh();
+  res = rec.submit(RACE, [row('a', 1), row('q', 2, { out: 'retired', finished: false, time: null, points: 0, bestLap: 8500 })]);
+  check('retiring after driving still opens standings', res.standings === true);
+  check('the retiree gets a race but no podium and no points', driver(rec, 'q').races === 1 && driver(rec, 'q').podiums === 0 && driver(rec, 'q').points === 0);
+  rec = fresh();
+  rec.submit(RACE, [row('q', 1, { out: 'retired', finished: false, time: null, points: 0 }), row('b', 2)]);
+  check('a retiree classified first earns no win', driver(rec, 'q').wins === 0 && driver(rec, 'q').races === 1);
+  rec = fresh();
+  res = rec.submit(RACE, [row('q', 1, { out: 'retired', finished: true })]);
+  check('retiring sets no race record', !res.records.some((r) => r.type === 'race'));
+
+  // -- running out of time is not a finish
+  rec = fresh();
+  rec.submit(RACE, [row('a', 1), row('slow', 2, { finished: false, time: null })]);
+  check('an unfinished driver keeps their points but gets no podium', driver(rec, 'slow').points === 12 && driver(rec, 'slow').podiums === 0);
+
+  // -- elimination: placings are earned by surviving
+  rec = fresh();
+  rec.submit({ mapId: 0, laps: 3, mode: 'elimination' }, [row('a', 1, { time: 60000 }), row('b', 2, { finished: false, out: 'elim', time: null }), row('c', 3, { finished: false, out: 'elim', time: null }), row('d', 4, { finished: false, out: 'retired', time: null, points: 0 })]);
+  check('in elimination the survivor wins and knocked-out drivers keep their podiums', driver(rec, 'a').wins === 1 && driver(rec, 'b').podiums === 1 && driver(rec, 'c').podiums === 1);
+  check('…but a quitter does not', driver(rec, 'd').podiums === 0 && driver(rec, 'd').races === 1);
+  check('elimination sets no race-time record', !rec.data.tracks[0].race3);
+
+  // -- plausibility floor
+  const lapFloor = minPlausibleMs(0, 1);
+  check('the floor is track length / boost speed, per lap', Math.abs(lapFloor - (RTMaps.MAPS[0].path.total / P.BOOST_MAX) * 1000) < 1e-6 && Math.abs(minPlausibleMs(0, 3) - lapFloor * 3) < 1e-6);
+  check('the floor sits well below a real lap', lapFloor < GOOD_LAP * 0.6);
+  rec = fresh();
+  res = rec.submit(RACE, [row('cheat', 1, { bestLap: Math.floor(lapFloor) - 1, time: Math.floor(lapFloor * 3) - 1 })]);
+  check('an impossible lap or race time sets no record', res.records.length === 0 && !rec.data.tracks[0].lap && !rec.data.tracks[0].race3);
+  res = rec.submit(RACE, [row('legit', 1, { bestLap: Math.ceil(lapFloor), time: Math.ceil(lapFloor * 3) })]);
+  check('a time right at the floor is accepted', res.records.length === 2);
+  rec = fresh();
+  res = rec.submit(RACE, [row('junk', 1, { bestLap: '1', time: NaN })]);
+  check('non-numeric times set no record', res.records.length === 0);
+
+  // -- ghosts
+  rec = fresh();
+  const real = new Set(['a']);
+  res = rec.submit(RACE, [row('a', 1), row('ghost', 2)], (pid) => real.has(pid));
+  check('an id with no profile behind it does not open standings', res.standings === false);
+  check('…and is not stored', !JSON.stringify(rec.data).includes('ghost'));
+  res = fresh().submit(RACE, null);
+  check('an empty race is harmless', res.standings === false && res.records.length === 0);
+}
+
 // ---- hall of fame is keyed by profile, not by name ---------------------------
 {
   const rec = new Records(tmp('records.json'));
   const race = { mapId: 0, laps: 3, mode: 'race' };
+  const human = (pid, name, pos, extra = {}) => ({ pid, name, carId: 1, bot: false, pos, finished: true, out: null, time: 30000 + pos * 1000, bestLap: 9000 + pos * 100, points: pos === 1 ? 16 : 12, progressed: true, ...extra });
   rec.submit(race, [
-    { pid: 'p1', name: 'Alice', carId: 1, bot: false, pos: 1, finished: true, time: 30000, bestLap: 9000, points: 16 },
-    { pid: null, name: 'Legacy Larry', carId: 2, bot: true, pos: 2, finished: true, time: 31000, bestLap: 9500, points: 12 },
-    { name: 'NoProfile', carId: 3, bot: false, pos: 3, finished: true, time: 32000, bestLap: 8000, points: 10 },
+    human('p1', 'Alice', 1),
+    human('p9', 'Zed', 2),
+    { pid: null, name: 'Legacy Larry', carId: 2, bot: true, pos: 3, finished: true, time: 31000, bestLap: 8000, points: 10, progressed: true },
+    { name: 'NoProfile', carId: 3, bot: false, pos: 4, finished: true, time: 32000, bestLap: 8000, points: 8, progressed: true },
   ]);
   let s = rec.summary();
-  check('bots and profile-less rows are left out', s.drivers.length === 1 && s.drivers[0].name === 'Alice');
-  check('the lap record belongs to the profiled driver', s.tracks[0].lap.name === 'Alice' && s.tracks[0].lap.time === 9000);
+  check('bots and profile-less rows are left out', s.drivers.length === 2 && s.drivers[0].name === 'Alice');
+  check('the lap record belongs to the profiled driver', s.tracks[0].lap.name === 'Alice' && s.tracks[0].lap.time === 9100);
 
   // Alice renames; someone else takes "Alice" and races.
-  rec.submit(race, [{ pid: 'p2', name: 'Alice', carId: 4, bot: false, pos: 1, finished: true, time: 40000, bestLap: 9900, points: 15 }]);
-  const current = { p1: 'Alicia', p2: 'Alice' };
-  s = rec.summary((pid) => current[pid] || null);
+  rec.submit(race, [human('p2', 'Alice', 1, { time: 40000, bestLap: 9900, points: 15 }), human('p9', 'Zed', 2)]);
+  const current = { p1: 'Alicia', p2: 'Alice', p9: 'Zed' };
+  s = rec.summary((pid) => (pid in current ? current[pid] : null));
   const alicia = s.drivers.find((d) => d.name === 'Alicia');
   const alice = s.drivers.find((d) => d.name === 'Alice');
   check('a rename keeps its history', !!alicia && alicia.wins === 1 && alicia.points === 16);
   check('taking a freed name does not inherit its wins', !!alice && alice.races === 1 && alice.points === 15);
   check('records show the holder\'s current name', s.tracks[0].lap.name === 'Alicia');
   check('profile ids are never exposed', !JSON.stringify(s).includes('p1') && !JSON.stringify(s).includes('pid'));
+
+  // The record holder's name is released (admin) and picked up by a newcomer.
+  current.p1 = '';
+  s = rec.summary((pid) => (pid in current ? current[pid] : null));
+  check('a driver with no current name leaves the board', !s.drivers.some((d) => d.name === 'Alicia' || d.name === ''));
+  check('…and their record is not credited to anyone else', s.tracks[0].lap.name === '(name released)' && s.tracks[0].lap.time === 9100);
+  check('the board is sorted with the most wins first', s.drivers[0].wins >= s.drivers[s.drivers.length - 1].wins);
 }
 
 fs.rmSync(dir, { recursive: true, force: true });

@@ -19,6 +19,25 @@ network can use. Set `PORT` to run somewhere else.
 Create a room, hit **Copy invite link**, and send it round. No accounts, no
 build step.
 
+## The front page
+
+The home screen follows the rev-trac.com look: DM Sans, the navy and red, pill
+buttons, and the three hero arrows behind the card where you pick a name and
+create or join a room. Below that are the Hall of Fame, the controls and
+powerups, and a **demo request** band.
+
+The demo form has no server behind it. It checks the fields, writes the email
+and opens the visitor's own mail app with it addressed to `hello@rev-trac.com`;
+nothing is sent or stored by this site. If no mail app opens there is a "Copy
+the request" button, and the band also links the address, the contact form and
+the recorded demos on rev-trac.com. To send requests somewhere else, change
+`data-to` on `#demo-form` in `public/index.html`.
+
+Every colour, font size, space and shadow is a named value in
+`public/tokens.css`; `public/style.css` only refers to those names. DM Sans is
+served from `public/fonts/` (SIL Open Font License, licence alongside), so the
+page makes no third-party requests.
+
 ## How to play
 
 | | |
@@ -78,7 +97,8 @@ that stops whoever is leading.
 Points accumulate across races in a room, so a session is a championship.
 After each race there are awards (Fastest Lap, Release Wrecker, CAB Magnet,
 Drift King…). Lap records and all-time wins are kept in `data/records.json`
-and shown in the **Hall of Fame** on the home screen.
+and shown in the **Hall of Fame** on the home screen. All-time standings only
+count races with two or more people driving (see below); lap records always count.
 
 Short of people? The host can add up to seven **AI drivers** at three skill
 levels. Late arrivals can join a room mid-race and spectate until the next one.
@@ -99,6 +119,25 @@ needs their cookie, not a text field.
 - Identity is the cookie. Clearing cookies orphans the name; free it with
   `node scripts/admin.js release "<name>"` (the server must be stopped — the
   script explains why and how).
+
+**The Hall of Fame cannot be farmed** (`lib/records.js`). Everything it stores
+comes from the simulation the server just ran, never from a client, and:
+
+- **All-time standings need a real race.** Races, wins, podiums and points
+  only count when two or more distinct profiles actually drove. Beating AI
+  drivers on your own does not count, and neither does a second browser parked
+  on the grid. The results screen says so when a race did not count.
+- **One profile, one result per race**, at its best finish.
+- **Wins and podiums need a real result.** Quitting still goes on your record
+  as a race, but never as a win, a podium or points. In a Grand Prix you must
+  cross the line; in Elimination, being knocked out second or third is a podium.
+- **Records must be physically possible.** A lap or race time quicker than a car
+  boosting flat-out for the whole distance is rejected.
+- **Lap records do count solo runs** — a fast lap is fast whoever else is there.
+  Bots never hold records.
+
+What this does not stop: one person genuinely driving two cars at once in two
+browsers. The points in a room's own championship are unaffected by any of this.
 
 **Rate limits** are token buckets (`lib/ratelimit.js`). They are backstops
 against flooding, not the integrity mechanism:
@@ -159,17 +198,29 @@ public/cars.js       car roster + stats     ├ shared by server and client
 public/items.js      powerups, flags, copy  ┘
 public/js/render.js  canvas renderer: themes, scenery, particles
 public/js/audio.js   synthesized sound effects and music (no audio files)
-public/js/main.js    screens, networking, interpolation, HUD
+public/js/main.js    screens, networking, interpolation, HUD, demo form
+public/tokens.css    design tokens: brand colours, type, space, shadows
+public/style.css     all styling, written against the tokens
+public/fonts/        DM Sans (self-hosted) and its licence
 ```
 
-The server is authoritative: it steps the simulation at 60 Hz and broadcasts
-snapshots at 30 Hz; clients interpolate between snapshots ~100 ms in the past.
+The server is authoritative: it steps the simulation at 60 Hz and broadcasts a
+snapshot every tick. Clients draw the race slightly in the past, interpolating
+between snapshots; that delay is input lag, so each client measures how evenly
+its snapshots arrive and keeps the delay as small as its connection allows
+(about 35 ms on a good one, up to 130 ms on a jittery one).
 `lib/race.js` has no sockets or timers in it, so a full race runs headless in
 milliseconds — that is how the bots and car balance were tuned.
 
+Handling lives in the `P` table at the top of `lib/race.js` (top speed,
+acceleration, steering rate, grip). Change a number, run `node test/sim.js`,
+and it reports lap times per track and whether the car bodies are still balanced.
+
 To add a track, add an entry to `public/maps.js` (control points are smoothed
 automatically; item rows, boost pads and oil are placed for you) and run
-`node test/validate-maps.js`.
+`node test/validate-maps.js`. Tracks are drawn on a 1600×1000 design grid and
+scaled into the world by `SCALE` in that file — that one number sets how big
+every track is relative to the cars, and the whole track always fits on screen.
 
 ## Tests
 
