@@ -69,6 +69,9 @@
     if (name === 'home') {
       loadHallOfFame();
       if (profile.id) renderNameGate();
+      heroTrack.start();
+    } else {
+      heroTrack.stop();
     }
     if (name !== 'game') A.engine(0, false, 0);
   }
@@ -211,10 +214,111 @@
   }
   loadHallOfFame();
 
-  // The numbers in the hero are counted, not typed, so they cannot go stale.
-  $('fact-tracks').textContent = MAPS.length;
-  $('fact-items').textContent = Object.keys(ITEMS).length;
-  $('fact-cars').textContent = CARS.length;
+  // ---- the track on the front page -----------------------------------------
+  // A real track, drawn by the race renderer, with a few cars lapping it. They
+  // follow the centreline in a lane and ease off for corners: a moving picture
+  // of the game, not a simulation of it.
+  const heroTrack = (() => {
+    const cv = $('hero-track');
+    const ctx = cv.getContext('2d');
+    const base = document.createElement('canvas');
+    base.width = cv.width; base.height = cv.height;
+    const world = RTMaps.WORLD;
+    const k = cv.width / world.w, offY = (cv.height - world.h * k) / 2;
+    const CAR_SCALE = 2.3;                     // cars are drawn larger than life so they read at this size
+    const LANES = [-0.42, 0.38, -0.05, 0.5], PACE = [1, 0.93, 1.07, 0.88];
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let map = null, cars = [], raf = 0, last = 0;
+    let paused = reduceMotion.matches;         // anyone who asked for less motion starts with it still
+
+    function setMap(m) {
+      map = m;
+      R.drawMapPreview(base, map);
+      cars = LANES.map((lane, i) => ({
+        car: CARS[(map.id * 3 + i * 5) % CARS.length],
+        u: 0.03 + i * 0.24, lane: lane * (map.halfWidth - 30), pace: PACE[i], angle: null,
+      }));
+      $('hero-track-name').textContent = map.name;
+      $('hero-track-desc').textContent = map.desc;
+      draw();
+    }
+
+    function step(dt) {
+      const total = map.path.total;
+      for (const c of cars) {
+        const here = RTMaps.pointAt(map.path, c.u);
+        const ahead = RTMaps.pointAt(map.path, c.u + 170 / total);
+        const turn = Math.abs(angNorm(Math.atan2(ahead.ty, ahead.tx) - Math.atan2(here.ty, here.tx)));
+        c.u = (c.u + (520 * c.pace * (1 - 0.5 * Math.min(1, turn / 1.2)) * dt) / total) % 1;
+      }
+    }
+
+    function draw() {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(base, 0, 0);
+      const total = map.path.total;
+      for (const c of cars) {
+        const p = RTMaps.pointAt(map.path, c.u);
+        // heading from a short chord rather than one segment, so it turns smoothly
+        const a = RTMaps.pointAt(map.path, c.u - 22 / total), b = RTMaps.pointAt(map.path, c.u + 22 / total);
+        const x = p.x - p.ty * c.lane, y = p.y + p.tx * c.lane;
+        ctx.setTransform(k, 0, 0, k, 0, offY);
+        ctx.translate(x, y);
+        ctx.rotate(Math.atan2(b.y - a.y, b.x - a.x));
+        ctx.scale(CAR_SCALE, CAR_SCALE);
+        R.drawCarBody(ctx, c.car);
+      }
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+    }
+
+    function tick(t) {
+      raf = requestAnimationFrame(tick);
+      step(Math.min(0.05, Math.max(0, (t - last) / 1000)));
+      last = t;
+      draw();
+    }
+    function start() {
+      if (raf || paused || screen !== 'home') return;
+      last = performance.now();
+      raf = requestAnimationFrame(tick);
+    }
+    function stop() { cancelAnimationFrame(raf); raf = 0; }
+    function setPaused(p) {
+      paused = p;
+      $('hero-track-pause').textContent = paused ? 'Play' : 'Pause';
+      $('hero-track-pause').setAttribute('aria-pressed', String(paused));
+      if (paused) stop(); else start();
+    }
+
+    $('hero-track-pause').onclick = () => setPaused(!paused);
+    $('hero-track-next').onclick = () => setMap(MAPS[(MAPS.indexOf(map) + 1) % MAPS.length]);
+    setMap(MAPS[0]);
+    setPaused(paused);
+    return { start, stop, step, draw };
+  })();
+
+  // ---- demo request: open and close ----------------------------------------
+  // Closed until asked for, so the page stays about the game.
+  function openDemo(open) {
+    $('demo-panel').hidden = !open;
+    $('demo-toggle').setAttribute('aria-expanded', String(open));
+    $('demo-toggle').textContent = open ? 'Close' : 'Request a demo';
+  }
+  $('demo-toggle').onclick = () => {
+    const open = $('demo-panel').hidden;
+    openDemo(open);
+    if (open) $('demo-name').focus();
+  };
+  // The header link opens it too. Handled here rather than left to the #demo
+  // jump, which would take the focus back off the first field.
+  document.querySelectorAll('#screen-home a[href="#demo"]').forEach((a) => {
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      openDemo(true);
+      $('demo').scrollIntoView({ block: 'start' });
+      $('demo-name').focus({ preventScroll: true });
+    });
+  });
 
   // ---- request a demo ------------------------------------------------------
   // There is no mail server behind this page, so the form writes the email and
@@ -1019,5 +1123,6 @@
     race: () => race,
     lobby: () => lobby,
     screen: () => screen,
+    heroTrack: (seconds) => { for (let t = 0; t < seconds; t += 1 / 60) heroTrack.step(1 / 60); heroTrack.draw(); },
   };
 })();

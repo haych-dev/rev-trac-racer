@@ -21,17 +21,23 @@ build step.
 
 ## The front page
 
-The home screen follows the rev-trac.com look: DM Sans, the navy and red, pill
-buttons, and the three hero arrows behind the card where you pick a name and
-create or join a room. Below that are the Hall of Fame, the controls and
-powerups, and a **demo request** band.
+The home screen is about the game. The first screen is a driver name, a room
+to create or join, and one of the real tracks with a few cars lapping it
+(**Next track** steps through all of them; **Pause** stops the cars, and they
+start paused for anyone whose system asks for reduced motion). It uses the
+rev-trac.com look: DM Sans, the navy and red, pill buttons.
 
-The demo form has no server behind it. It checks the fields, writes the email
-and opens the visitor's own mail app with it addressed to `hello@rev-trac.com`;
-nothing is sent or stored by this site. If no mail app opens there is a "Copy
-the request" button, and the band also links the address, the contact form and
-the recorded demos on rev-trac.com. To send requests somewhere else, change
-`data-to` on `#demo-form` in `public/index.html`.
+Below that, one band holds the Hall of Fame, lap records and controls, with
+the powerup list folded away under "What the powerups do".
+
+The **demo request** is a single line at the bottom until someone opens it
+(from there or from the header button). The form has no server behind it: it
+checks the fields, writes the email and opens the visitor's own mail app with
+it addressed to `hello@rev-trac.com`; nothing is sent or stored by this site.
+If no mail app opens there is a "Copy the request" button, and the panel also
+links the address, the contact form and the recorded demos on rev-trac.com. To
+send requests somewhere else, change `data-to` on `#demo-form` in
+`public/index.html`.
 
 Every colour, font size, space and shadow is a named value in
 `public/tokens.css`; `public/style.css` only refers to those names. DM Sans is

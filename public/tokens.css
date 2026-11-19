@@ -23,7 +23,7 @@
   --text-md: 1.125rem;
   --text-lg: 1.375rem;
   --text-xl: clamp(1.75rem, 1.3rem + 1.9vw, 2.5rem);
-  --text-display: clamp(2.5rem, 5.4vw, 4.25rem);
+  --text-display: clamp(2.25rem, 4.1vw, 3.25rem);
 
   --lh-display: 1.03;
   --lh-heading: 1.12;
@@ -60,7 +60,6 @@
   --color-accent-soft: oklch(96.1% 0.016 8);      /* #fdeef0 */
   --color-accent-rule: oklch(83.7% 0.068 13);     /* #f2b8bd */
   --color-chevron: oklch(64.9% 0.198 21);         /* #ef4d57  the hero arrows */
-  --color-chevron-glow: oklch(64.9% 0.198 21 / 0.5);
 
   /* ---- on the dark band ---- */
   --color-on-deep: oklch(99.4% 0.002 248);

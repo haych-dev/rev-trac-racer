@@ -2,6 +2,17 @@
   {
     "date": "2026-11-19",
     "verb": "redesign",
+    "scope": "home screen, simplified",
+    "macrostructure": "split hero + utility band",
+    "theme": "studied-DNA (source: rev-trac.com)",
+    "nav": "wordmark + one action",
+    "footer": "single line",
+    "enrichment": "the game's own track, live on a canvas",
+    "brief": "Less on the front page, more of the game"
+  },
+  {
+    "date": "2026-11-19",
+    "verb": "redesign",
     "scope": "home screen (public/index.html #screen-home)",
     "macrostructure": "Split Studio",
     "theme": "studied-DNA (source: rev-trac.com)",

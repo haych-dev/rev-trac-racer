@@ -27,23 +27,15 @@
     </header>
 
     <main>
+      <!-- The first screen is the game: who you are, a room to race in, and a
+           track with cars on it. Everything else is below the fold. -->
       <section class="hero">
         <div class="wrap hero__grid">
-          <div class="hero__pitch">
-            <p class="kicker">Top-down multiplayer racing</p>
-            <h1 class="hero__title"><span>Race your changes</span> <span class="accent">to production.</span></h1>
-            <p class="hero__lede">Drift, draft and sabotage up to seven colleagues on the way. Share a room code and go. Nothing to install.</p>
-          </div>
-
           <div class="hero__start">
-            <svg class="hero__chevrons" viewBox="0 0 155 100" aria-hidden="true">
-              <path class="chev chev--1" d="M36 21 L70 50 L36 79" transform="scale(0.86)" transform-origin="53 50"/>
-              <path class="chev chev--2" d="M58 19 L94 50 L58 81" transform="scale(0.93)" transform-origin="76 50"/>
-              <path class="chev chev--3" d="M80 17 L118 50 L80 83"/>
-            </svg>
-            <div class="start-card">
-              <h2 class="start-card__title">Get on the grid</h2>
+            <h1 class="hero__title"><span>Race your changes</span> <span class="accent">to production.</span></h1>
+            <p class="hero__lede">Top-down racing for you and seven colleagues.</p>
 
+            <div class="start">
               <label for="name-input">Driver name</label>
               <div class="name-row">
                 <input id="name-input" maxlength="16" placeholder="e.g. Basis Bandit" autocomplete="off" aria-describedby="name-status" />
@@ -64,100 +56,99 @@
             </div>
           </div>
 
-          <dl class="facts">
-            <div><dt>Tracks</dt><dd id="fact-tracks">9</dd></div>
-            <div><dt>Powerups</dt><dd id="fact-items">12</dd></div>
-            <div><dt>Cars</dt><dd id="fact-cars">16</dd></div>
-            <div><dt>Drivers a room</dt><dd>8</dd></div>
-          </dl>
+          <figure class="track">
+            <canvas id="hero-track" class="track__canvas" width="1120" height="700" role="img" aria-label="A track from the game with cars lapping it"></canvas>
+            <figcaption class="track__bar">
+              <p class="track__name"><b id="hero-track-name"></b> <span id="hero-track-desc"></span></p>
+              <div class="track__actions">
+                <button type="button" id="hero-track-pause" class="btn small" aria-pressed="false">Pause</button>
+                <button type="button" id="hero-track-next" class="btn small">Next track</button>
+              </div>
+            </figcaption>
+          </figure>
         </div>
       </section>
 
-      <section class="band band--tint" aria-labelledby="hof-title">
-        <div class="wrap split">
-          <div class="split__words">
-            <h2 class="band__title" id="hof-title">Hall of Fame</h2>
-            <p class="band__lede">All-time standings count races with two or more people driving. Lap records count whoever is on the track.</p>
-          </div>
-          <div class="split__thing boards">
+      <section class="band" aria-label="Hall of Fame and controls">
+        <div class="wrap">
+          <div class="info">
             <div>
-              <h3 class="label">All-time standings</h3>
+              <h2 class="label">Hall of Fame</h2>
               <div id="hof-drivers" class="hof"></div>
             </div>
             <div>
-              <h3 class="label">Lap records</h3>
+              <h2 class="label">Lap records</h2>
               <div id="hof-tracks" class="hof"></div>
             </div>
+            <div>
+              <h2 class="label">Controls</h2>
+              <dl class="keys">
+                <div><dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows</dt><dd>Drive</dd></div>
+                <div><dt><kbd>Shift</kbd> in a corner</dt><dd>Drift</dd></div>
+                <div><dt><kbd>Space</kbd></dt><dd>Use powerup</dd></div>
+                <div><dt><kbd>H</kbd> <kbd>R</kbd> <kbd>M</kbd> <kbd>Esc</kbd></dt><dd>Horn, reset, sound, leave</dd></div>
+              </dl>
+            </div>
           </div>
-        </div>
-      </section>
-
-      <section class="band" aria-labelledby="drive-title">
-        <div class="wrap split split--flip">
-          <div class="split__words">
-            <h2 class="band__title" id="drive-title">How to drive it</h2>
-            <dl class="keys">
-              <div><dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows</dt><dd>Drive</dd></div>
-              <div><dt><kbd>Shift</kbd> held in a corner</dt><dd>Drift, then release for a mini-turbo</dd></div>
-              <div><dt><kbd>Space</kbd></dt><dd>Use your powerup</dd></div>
-              <div><dt><kbd>H</kbd> <kbd>R</kbd> <kbd>M</kbd> <kbd>Esc</kbd></dt><dd>Horn, back on track, sound, leave</dd></div>
-            </dl>
-            <p class="tip">Tuck in behind another car to slipstream. Hit the red chevrons for a boost. Avoid the oil.</p>
-          </div>
-          <div class="split__thing">
-            <h3 class="label">Powerups <small>Grab a ? box. Drivers further back roll better ones.</small></h3>
+          <details class="more">
+            <summary>What the powerups do</summary>
             <ul id="item-list" class="item-list"></ul>
-          </div>
+          </details>
         </div>
       </section>
 
-      <section class="band demo" id="demo" aria-labelledby="demo-title">
-        <div class="wrap split split--even">
-          <div class="split__words">
-            <h2 class="band__title" id="demo-title">See the real Rev-Trac.</h2>
-            <p class="band__lede">The game is a joke about SAP change management. Rev-Trac is the product that does it for real. Ask for a demo and the Rev-Trac team will take it from there.</p>
+      <section class="demo" id="demo" aria-labelledby="demo-title">
+        <div class="wrap">
+          <div class="demo__bar">
+            <div class="demo__words">
+              <h2 class="demo__title" id="demo-title">See the real Rev-Trac.</h2>
+              <p class="demo__lede">The game is a joke about SAP change management. Rev-Trac is the product that does it for real.</p>
+            </div>
+            <button type="button" id="demo-toggle" class="btn primary inline" aria-expanded="false" aria-controls="demo-panel">Request a demo</button>
+          </div>
+
+          <div id="demo-panel" class="demo__panel" hidden>
+            <!-- The request goes out as an email from the visitor's own mail app.
+                 To send it somewhere else, change data-to. -->
+            <form id="demo-form" class="demo-form" data-to="hello@rev-trac.com" novalidate>
+              <div class="field">
+                <label for="demo-name">Your name</label>
+                <input id="demo-name" name="name" autocomplete="name" maxlength="80" required aria-describedby="demo-name-msg" />
+                <p class="field__msg" id="demo-name-msg"></p>
+              </div>
+              <div class="field">
+                <label for="demo-email">Work email</label>
+                <input id="demo-email" name="email" type="email" inputmode="email" autocomplete="email" maxlength="120" required aria-describedby="demo-email-msg" />
+                <p class="field__msg" id="demo-email-msg"></p>
+              </div>
+              <div class="field field--wide">
+                <label for="demo-company">Company</label>
+                <input id="demo-company" name="company" autocomplete="organization" maxlength="100" required aria-describedby="demo-company-msg" />
+                <p class="field__msg" id="demo-company-msg"></p>
+              </div>
+              <div class="field field--wide">
+                <label for="demo-message">What would you like to see? <small>Optional</small></label>
+                <textarea id="demo-message" name="message" maxlength="600" rows="3"></textarea>
+                <p class="field__msg"></p>
+              </div>
+              <div class="demo-form__foot">
+                <button type="submit" class="btn primary">Open the email</button>
+                <p class="demo-form__note">Opens your email app with the request written. Nothing is sent from this page.</p>
+              </div>
+              <div class="demo-result" id="demo-result" role="status">
+                <p id="demo-result-text"></p>
+                <div class="demo-result__actions" id="demo-result-actions" hidden>
+                  <button type="button" id="demo-copy" class="btn small ghost">Copy the request</button>
+                </div>
+                <textarea id="demo-copy-text" class="demo-result__text" rows="8" readonly hidden aria-label="Your demo request, ready to copy"></textarea>
+              </div>
+            </form>
             <ul class="demo__alt">
               <li><span>Email</span> <a href="mailto:hello@rev-trac.com">hello@rev-trac.com</a></li>
               <li><span>Contact form</span> <a href="https://rev-trac.com/contact/" target="_blank" rel="noopener">rev-trac.com/contact</a></li>
               <li><span>Recorded demos</span> <a href="https://rev-trac.com/category/demos/" target="_blank" rel="noopener">rev-trac.com/category/demos</a></li>
             </ul>
           </div>
-
-          <!-- The request goes out as an email from the visitor's own mail app.
-               To send it somewhere else, change data-to. -->
-          <form id="demo-form" class="split__thing demo-form" data-to="hello@rev-trac.com" novalidate>
-            <div class="field">
-              <label for="demo-name">Your name</label>
-              <input id="demo-name" name="name" autocomplete="name" maxlength="80" required aria-describedby="demo-name-msg" />
-              <p class="field__msg" id="demo-name-msg"></p>
-            </div>
-            <div class="field">
-              <label for="demo-email">Work email</label>
-              <input id="demo-email" name="email" type="email" inputmode="email" autocomplete="email" maxlength="120" required aria-describedby="demo-email-msg" />
-              <p class="field__msg" id="demo-email-msg"></p>
-            </div>
-            <div class="field field--wide">
-              <label for="demo-company">Company</label>
-              <input id="demo-company" name="company" autocomplete="organization" maxlength="100" required aria-describedby="demo-company-msg" />
-              <p class="field__msg" id="demo-company-msg"></p>
-            </div>
-            <div class="field field--wide">
-              <label for="demo-message">What would you like to see? <small>Optional</small></label>
-              <textarea id="demo-message" name="message" maxlength="600" rows="3"></textarea>
-              <p class="field__msg"></p>
-            </div>
-            <div class="demo-form__foot">
-              <button type="submit" class="btn primary">Request a demo</button>
-              <p class="demo-form__note">Opens your email app with the request written. Nothing is sent from this page.</p>
-            </div>
-            <div class="demo-result" id="demo-result" role="status">
-              <p id="demo-result-text"></p>
-              <div class="demo-result__actions" id="demo-result-actions" hidden>
-                <button type="button" id="demo-copy" class="btn small ghost">Copy the request</button>
-              </div>
-              <textarea id="demo-copy-text" class="demo-result__text" rows="8" readonly hidden aria-label="Your demo request, ready to copy"></textarea>
-            </div>
-          </form>
         </div>
       </section>
     </main>
@@ -167,7 +158,6 @@
         <p>Rev-Trac Racer. A game about getting changes to production.</p>
         <ul class="foot__links">
           <li><a href="https://rev-trac.com/" target="_blank" rel="noopener">rev-trac.com</a></li>
-          <li><a href="#demo">Request a demo</a></li>
         </ul>
       </div>
     </footer>
